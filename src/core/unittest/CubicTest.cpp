@@ -776,45 +776,66 @@ TEST(CubicTest, CongestionAvoidance_IdleTimeDetection)
     SetupCubicTest(Connection, Settings, 10, 100, false, false, true, 50000);
     Connection.Paths[0].RttVariance = 5000;
 
-    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+    QUIC_CONGESTION_CONTROL* Cc = &Connection.CongestionControl;
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Cc->Cubic;
 
-    // Set up congestion avoidance state
-    Cubic->CongestionWindow = 30000;
-    Cubic->SlowStartThreshold = 20000;
-    Cubic->WindowMax = 40000;
-    Cubic->KCubic = 500;
-    Cubic->HasHadCongestionEvent = TRUE;
-    Cubic->BytesInFlight = 15000;
-    Cubic->AimdWindow = 30000;
-    Cubic->BytesInFlightMax = 30000;
-    Cubic->WindowPrior = 40000;
+    // Setup: Establish congestion avoidance state via API
+    // Use OnDataLost to trigger congestion event
+    Cubic->BytesInFlight = 20000;
+    QUIC_LOSS_EVENT LossEvent;
+    CxPlatZeroMemory(&LossEvent, sizeof(LossEvent));
+    LossEvent.NumRetransmittableBytes = 5000;
+    LossEvent.PersistentCongestion = FALSE;
+    LossEvent.LargestPacketNumberLost = 10;
+    LossEvent.LargestSentPacketNumber = 20;
+    Cc->QuicCongestionControlOnDataLost(Cc, &LossEvent);
 
-    uint64_t Now = 1000000; //CxPlatTimeUs64();
-    Cubic->TimeOfCongAvoidStart = Now - 500000; // Started 500ms ago
-    Cubic->TimeOfLastAck = Now - 200000; // Last ACK was 200ms ago (idle gap)
-    Cubic->TimeOfLastAckValid = TRUE;
+    // Now in recovery with reduced window
+    ASSERT_TRUE(Cubic->HasHadCongestionEvent);
+
+    // Exit recovery via ACK to enter congestion avoidance
+    uint64_t BaseTime = 500000;
+    Cubic->BytesInFlight = 10000;
+    QUIC_ACK_EVENT AckEvent1;
+    CxPlatZeroMemory(&AckEvent1, sizeof(AckEvent1));
+    AckEvent1.TimeNow = BaseTime;
+    AckEvent1.LargestAck = 25; // > RecoverySentPacketNumber
+    AckEvent1.LargestSentPacketNumber = 30;
+    AckEvent1.NumRetransmittableBytes = 5000;
+    AckEvent1.SmoothedRtt = 50000;
+    AckEvent1.MinRttValid = FALSE;
+    Cc->QuicCongestionControlOnDataAcknowledged(Cc, &AckEvent1);
+
+    // Now in congestion avoidance
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    ASSERT_GT(Cubic->TimeOfCongAvoidStart, 0u);
+
+    // Test behavior: Send ACK with normal timing
+    Cubic->BytesInFlight = 8000;
+    QUIC_ACK_EVENT AckEvent2;
+    CxPlatZeroMemory(&AckEvent2, sizeof(AckEvent2));
+    AckEvent2.TimeNow = BaseTime + 50000; // 50ms later
+    AckEvent2.LargestAck = 26;
+    AckEvent2.LargestSentPacketNumber = 35;
+    AckEvent2.NumRetransmittableBytes = 1200;
+    AckEvent2.SmoothedRtt = 50000;
+    AckEvent2.MinRttValid = FALSE;
+    Cc->QuicCongestionControlOnDataAcknowledged(Cc, &AckEvent2);
 
     uint64_t TimeOfCongAvoidStartBefore = Cubic->TimeOfCongAvoidStart;
 
-    // Send ACK after long idle period
-    QUIC_ACK_EVENT AckEvent;
-    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
-    AckEvent.TimeNow = Now;
-    AckEvent.LargestAck = 40;
-    AckEvent.NumRetransmittableBytes = 1200;
-    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent.SmoothedRtt = 50000;
-    AckEvent.MinRtt = 45000;
-    AckEvent.MinRttValid = FALSE;
-    AckEvent.IsImplicit = FALSE;
-    AckEvent.HasLoss = FALSE;
-    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
-    AckEvent.AckedPackets = NULL;
-
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
-        &Connection.CongestionControl,
-        &AckEvent);
+    // Test behavior: Send ACK after long idle period (200ms gap > SendIdleTimeout)
+    // This should trigger idle time adjustment via OnDataAcknowledged
+    Cubic->BytesInFlight = 6000;
+    QUIC_ACK_EVENT AckEvent3;
+    CxPlatZeroMemory(&AckEvent3, sizeof(AckEvent3));
+    AckEvent3.TimeNow = BaseTime + 250000; // 200ms after last ACK (idle gap)
+    AckEvent3.LargestAck = 27;
+    AckEvent3.LargestSentPacketNumber = 40;
+    AckEvent3.NumRetransmittableBytes = 1200;
+    AckEvent3.SmoothedRtt = 50000;
+    AckEvent3.MinRttValid = FALSE;
+    Cc->QuicCongestionControlOnDataAcknowledged(Cc, &AckEvent3);
 
     // Verify TimeOfCongAvoidStart was adjusted forward to account for idle time
     // This freezes window growth during the idle period
