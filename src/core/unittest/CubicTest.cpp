@@ -50,10 +50,18 @@ static void InitializeMockConnection(
     // Initialize Settings with defaults
     Connection.Settings.PacingEnabled = FALSE;  // Disable pacing by default for simpler tests
     Connection.Settings.HyStartEnabled = FALSE; // Disable HyStart by default
+    Connection.Settings.NetStatsEventEnabled = FALSE; // Disable to avoid event callback issues
 
     // Initialize Path fields needed for some functions
     Connection.Paths[0].GotFirstRttSample = FALSE;
     Connection.Paths[0].SmoothedRtt = 0;
+
+    // Initialize SendBuffer fields to avoid crashes in QuicSendBufferConnectionAdjust
+    Connection.SendBuffer.PostedBytes = 0;
+    Connection.SendBuffer.IdealBytes = 0;
+
+    // Initialize Streams.StreamTable to NULL so QuicSendBufferConnectionAdjust early returns
+    Connection.Streams.StreamTable = NULL;
 }
 
 //
@@ -1952,5 +1960,204 @@ TEST(CubicTest, KCubicCalculationValidation)
     // K should be different (larger window gap)
     ASSERT_NE(Cubic->KCubic, OriginalK);
     ASSERT_GT(Cubic->KCubic, 0u);
+}
+
+//
+// Test 46: HyStart++ RTT Pattern - Spurious Exit Detection (RTT Decrease)
+// Scenario: Tests Pattern 2 - RTT decrease after entering Conservative Slow Start.
+// Simulates a transient RTT increase that triggers CSS, followed by RTT returning
+// to baseline, which should cause HyStart to resume full slow start.
+//
+// Round 1: Baseline RTT = 40ms
+// Round 2: RTT increases to 50ms → Triggers CSS entry (HYSTART_ACTIVE)
+// Round 3: RTT decreases to 45ms → Detects spurious exit, resume slow start (HYSTART_NOT_STARTED)
+//
+TEST(CubicTest, HyStartRTTPattern_SpuriousExitDetection)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    SetupCubicTest(Connection, Settings, 10, 1000, false, true, true, 50000);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Verify initial state
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
+    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u);
+
+    // Start with initial window in slow start
+    Cubic->CongestionWindow = 15000;
+    Cubic->SlowStartThreshold = UINT32_MAX;
+    Cubic->BytesInFlight = 0;
+    Cubic->HyStartRoundEnd = 10;
+    Connection.Send.NextPacketNumber = 0;
+
+    // === ROUND 1: Establish baseline RTT ===
+    // Send 8 ACKs with MinRTT = 40ms to establish baseline
+    for (uint32_t i = 0; i < 8; i++) {
+        Cubic->BytesInFlight = 1200;
+
+        QUIC_ACK_EVENT AckEvent;
+        CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+        AckEvent.TimeNow = 1000000 + (i * 5000);
+        AckEvent.LargestAck = i;
+        AckEvent.LargestSentPacketNumber = i + 5;
+        AckEvent.NumRetransmittableBytes = 1200;
+        AckEvent.SmoothedRtt = 50000;
+        AckEvent.MinRtt = 40000; // 40ms baseline
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+            &Connection.CongestionControl, &AckEvent);
+    }
+
+    // After 8 ACKs, MinRttInCurrentRound should be 40ms
+    ASSERT_EQ(Cubic->MinRttInCurrentRound, 40000u);
+    ASSERT_EQ(Cubic->HyStartAckCount, 8u);
+
+    // End Round 1 by advancing to next packet number beyond HyStartRoundEnd
+    Cubic->BytesInFlight = 1200;
+    Connection.Send.NextPacketNumber = 15;
+    QUIC_ACK_EVENT EndRound1Event;
+    CxPlatZeroMemory(&EndRound1Event, sizeof(EndRound1Event));
+    EndRound1Event.TimeNow = 1100000;
+    EndRound1Event.LargestAck = 11; // >= HyStartRoundEnd (10)
+    EndRound1Event.LargestSentPacketNumber = 15;
+    EndRound1Event.NumRetransmittableBytes = 1200;
+    EndRound1Event.SmoothedRtt = 50000;
+    EndRound1Event.MinRtt = 40000;
+    EndRound1Event.MinRttValid = TRUE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &EndRound1Event);
+
+    // Round 1 complete: MinRttInLastRound should now be 40ms
+    ASSERT_EQ(Cubic->MinRttInLastRound, 40000u);
+    ASSERT_EQ(Cubic->HyStartAckCount, 0u); // Reset for new round
+    ASSERT_EQ(Cubic->MinRttInCurrentRound, UINT64_MAX); // Reset
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
+
+    // === ROUND 2: RTT increases to trigger CSS ===
+    // Send 8 ACKs with MinRTT = 50ms (increase of 10ms > 40ms/8 = 5ms threshold)
+    Connection.Send.NextPacketNumber = 20;
+    Cubic->HyStartRoundEnd = 30;
+    for (uint32_t i = 0; i < 8; i++) {
+        Cubic->BytesInFlight = 1200;
+
+        QUIC_ACK_EVENT AckEvent;
+        CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+        AckEvent.TimeNow = 1150000 + (i * 5000);
+        AckEvent.LargestAck = 15 + i;
+        AckEvent.LargestSentPacketNumber = 20 + i;
+        AckEvent.NumRetransmittableBytes = 1200;
+        AckEvent.SmoothedRtt = 50000;
+        AckEvent.MinRtt = 50000; // 50ms - increased RTT
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+            &Connection.CongestionControl, &AckEvent);
+    }
+    ASSERT_EQ(Cubic->MinRttInCurrentRound, 50000u);
+    ASSERT_EQ(Cubic->MinRttInLastRound, 40000u);
+
+    // // After 8 ACKs, should still be sampling
+    ASSERT_EQ(Cubic->HyStartAckCount, 8u);
+    ASSERT_EQ(Cubic->MinRttInCurrentRound, 50000u);
+
+    // Send 9th ACK to trigger delay detection
+    Cubic->BytesInFlight = 1200;
+    QUIC_ACK_EVENT TriggerCSSEvent;
+    CxPlatZeroMemory(&TriggerCSSEvent, sizeof(TriggerCSSEvent));
+    TriggerCSSEvent.TimeNow = 1200000;
+    TriggerCSSEvent.LargestAck = 24;
+    TriggerCSSEvent.LargestSentPacketNumber = 30;
+    TriggerCSSEvent.NumRetransmittableBytes = 1200;
+    TriggerCSSEvent.SmoothedRtt = 50000;
+    TriggerCSSEvent.MinRtt = 50000;
+    TriggerCSSEvent.MinRttValid = TRUE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &TriggerCSSEvent);
+
+    // Should now be in HYSTART_ACTIVE (Conservative Slow Start)
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
+    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 4u); // Growth slowed by 4x
+    ASSERT_EQ(Cubic->CssBaselineMinRtt, 50000u); // Baseline set to current RTT
+
+    // End Round 2
+    Cubic->BytesInFlight = 1200;
+    Connection.Send.NextPacketNumber = 35;
+    QUIC_ACK_EVENT EndRound2Event;
+    CxPlatZeroMemory(&EndRound2Event, sizeof(EndRound2Event));
+    EndRound2Event.TimeNow = 1250000;
+    EndRound2Event.LargestAck = Cubic->HyStartRoundEnd; // Trigger round end
+    EndRound2Event.LargestSentPacketNumber = 35;
+    EndRound2Event.NumRetransmittableBytes = 1200;
+    EndRound2Event.SmoothedRtt = 50000;
+    EndRound2Event.MinRtt = 50000;
+    EndRound2Event.MinRttValid = TRUE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &EndRound2Event);
+
+    // Should still be in HYSTART_ACTIVE
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
+    ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 4u); // Decremented from 5 to 4
+
+    // === ROUND 3: RTT decreases - spurious exit detection ===
+    // In HYSTART_ACTIVE state, we need to collect 8 samples, then on the 9th ACK
+    // with decreased RTT, it triggers the spurious exit detection.
+    Connection.Send.NextPacketNumber = 40;
+    Cubic->HyStartRoundEnd = 50;
+
+    // First, collect 8 samples with decreased RTT (45ms < CssBaselineMinRtt of 50ms)
+    for (uint32_t i = 0; i < 8; i++) {
+        Cubic->BytesInFlight = 1200;
+
+        QUIC_ACK_EVENT AckEvent;
+        CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+        AckEvent.TimeNow = 1300000 + (i * 5000);
+        AckEvent.LargestAck = 35 + i;
+        AckEvent.LargestSentPacketNumber = 40 + i;
+        AckEvent.NumRetransmittableBytes = 1200;
+        AckEvent.SmoothedRtt = 50000;
+        AckEvent.MinRtt = 45000; // 45ms - DECREASED below baseline
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+            &Connection.CongestionControl, &AckEvent);
+    }
+
+    // After 8 samples, MinRttInCurrentRound should be 45ms, still in ACTIVE
+    ASSERT_EQ(Cubic->MinRttInCurrentRound, 45000u);
+    ASSERT_EQ(Cubic->HyStartAckCount, 8u);
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE); // Still in CSS
+
+    // Send 9th ACK to trigger spurious exit detection (line 515-517)
+    // The else branch (line 511) is entered when HyStartState == HYSTART_ACTIVE
+    // and we've already collected 8 samples (HyStartAckCount >= 8)
+    Cubic->BytesInFlight = 1200;
+    QUIC_ACK_EVENT SpuriousDetectionEvent;
+    CxPlatZeroMemory(&SpuriousDetectionEvent, sizeof(SpuriousDetectionEvent));
+    SpuriousDetectionEvent.TimeNow = 1350000;
+    SpuriousDetectionEvent.LargestAck = 44;
+    SpuriousDetectionEvent.LargestSentPacketNumber = 50;
+    SpuriousDetectionEvent.NumRetransmittableBytes = 1200;
+    SpuriousDetectionEvent.SmoothedRtt = 50000;
+    SpuriousDetectionEvent.MinRtt = 45000; // Still decreased
+    SpuriousDetectionEvent.MinRttValid = TRUE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &SpuriousDetectionEvent);
+
+    // CRITICAL: Should revert to HYSTART_NOT_STARTED (Lines 515-517 coverage)
+    // This is the spurious exit detection - RTT decrease indicates false alarm
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
+    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u); // Resume full slow start growth
 }
 
