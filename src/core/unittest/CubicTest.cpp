@@ -193,22 +193,25 @@ TEST(CubicTest, CanSendScenarios)
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_CUBIC *Cubic = &Connection.CongestionControl.Cubic;
+    uint32_t CongestionWindow = Cubic->CongestionWindow;
 
     // Scenario 1: Available window - can send
-    Cubic->BytesInFlight = Cubic->CongestionWindow / 2;
-    Cubic->Exemptions = 0;
+    // Simulate sending half the window
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, CongestionWindow / 2);
     ASSERT_TRUE(Connection.CongestionControl.QuicCongestionControlCanSend(&Connection.CongestionControl));
 
     // Scenario 2: Congestion blocked - cannot send
-    Cubic->BytesInFlight = Cubic->CongestionWindow;
+    // Simulate sending the rest to fill the window
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, CongestionWindow / 2);
     ASSERT_FALSE(Connection.CongestionControl.QuicCongestionControlCanSend(&Connection.CongestionControl));
 
     // Scenario 3: Exceeding window - still blocked
-    Cubic->BytesInFlight = Cubic->CongestionWindow + 100;
+    // Simulate sending more (allowed due to exemption below minimum)
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 100);
     ASSERT_FALSE(Connection.CongestionControl.QuicCongestionControlCanSend(&Connection.CongestionControl));
 
     // Scenario 4: With exemptions - can send even when blocked
-    Cubic->Exemptions = 2;
+    Connection.CongestionControl.QuicCongestionControlSetExemption(&Connection.CongestionControl, 2);
     ASSERT_TRUE(Connection.CongestionControl.QuicCongestionControlCanSend(&Connection.CongestionControl));
 }
 
@@ -264,16 +267,37 @@ TEST(CubicTest, GetSendAllowanceScenarios)
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_CUBIC *Cubic = &Connection.CongestionControl.Cubic;
+    uint32_t CongestionWindow = Cubic->CongestionWindow;
 
     // Scenario 1: Congestion blocked - should return 0
-    Cubic->BytesInFlight = Cubic->CongestionWindow;
+    // Fill the window completely
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, CongestionWindow);
     uint32_t Allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
         &Connection.CongestionControl, 1000, TRUE);
     ASSERT_EQ(Allowance, 0u);
 
     // Scenario 2: Available window without pacing - should return full window
+    // Reset by acknowledging half the data
     Connection.Settings.PacingEnabled = FALSE;
-    Cubic->BytesInFlight = Cubic->CongestionWindow / 2;
+    QUIC_ACK_EVENT AckEvent;
+    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 5;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.NumRetransmittableBytes = CongestionWindow / 2;
+    AckEvent.NumTotalAckedRetransmittableBytes = CongestionWindow / 2;
+    AckEvent.SmoothedRtt = 50000;
+    AckEvent.MinRtt = 45000;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+    
     uint32_t ExpectedAllowance = Cubic->CongestionWindow - Cubic->BytesInFlight;
     Allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
         &Connection.CongestionControl, 1000, TRUE);
@@ -315,9 +339,10 @@ TEST(CubicTest, GetSendAllowanceWithActivePacing)
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+    uint32_t CongestionWindow = Cubic->CongestionWindow;
 
     // Set BytesInFlight to half the window to have available capacity
-    Cubic->BytesInFlight = Cubic->CongestionWindow / 2;
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, CongestionWindow / 2);
     uint32_t AvailableWindow = Cubic->CongestionWindow - Cubic->BytesInFlight;
 
     // Simulate 10ms elapsed since last send
@@ -394,10 +419,19 @@ TEST(CubicTest, ResetScenarios)
     QUIC_CONGESTION_CONTROL_CUBIC *Cubic = &Connection.CongestionControl.Cubic;
 
     // Scenario 1: Partial reset (FullReset=FALSE) - preserves BytesInFlight
-    Cubic->BytesInFlight = 5000;
-    Cubic->SlowStartThreshold = 10000;
-    Cubic->IsInRecovery = TRUE;
-    Cubic->HasHadCongestionEvent = TRUE;
+    // First, send some data and trigger a congestion event to set internal flags
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
+    
+    // Trigger congestion event via loss
+    QUIC_LOSS_EVENT LossEvent;
+    CxPlatZeroMemory(&LossEvent, sizeof(LossEvent));
+    LossEvent.NumRetransmittableBytes = 1200;
+    LossEvent.PersistentCongestion = FALSE;
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+    
     uint32_t BytesInFlightBefore = Cubic->BytesInFlight;
 
     Connection.CongestionControl.QuicCongestionControlReset(&Connection.CongestionControl, FALSE);
@@ -409,9 +443,12 @@ TEST(CubicTest, ResetScenarios)
     ASSERT_EQ(Cubic->BytesInFlight, BytesInFlightBefore); // Preserved
 
     // Scenario 2: Full reset (FullReset=TRUE) - zeros BytesInFlight
-    Cubic->BytesInFlight = 5000;
-    Cubic->SlowStartThreshold = 10000;
-    Cubic->IsInRecovery = TRUE;
+    // Reinitialize and send data again
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
+    
+    // Trigger another congestion event
+    LossEvent.NumRetransmittableBytes = 1200;
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
 
     Connection.CongestionControl.QuicCongestionControlReset(&Connection.CongestionControl, TRUE);
 
@@ -793,7 +830,8 @@ TEST(CubicTest, HyStart_DisabledNoStateChange)
     ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u);
 
     // With HyStart disabled, state should remain unchanged even with ACKs
-    Cubic->BytesInFlight = 5000;
+    // First send data to have something in flight
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
 
     QUIC_ACK_EVENT AckEvent;
     CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
@@ -841,11 +879,18 @@ TEST(CubicTest, PersistentCongestion_WindowReset)
     QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
     uint32_t InitialWindow = Cubic->CongestionWindow;
 
-    // Set up congestion state
-    Cubic->BytesInFlight = 10000;
-    Cubic->HasHadCongestionEvent = TRUE;
-    Cubic->IsInRecovery = FALSE;
-    Cubic->IsInPersistentCongestion = FALSE;
+    // Set up congestion state by sending data and triggering a prior congestion event
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
+    
+    // First congestion event to set HasHadCongestionEvent
+    QUIC_LOSS_EVENT FirstLoss;
+    CxPlatZeroMemory(&FirstLoss, sizeof(FirstLoss));
+    FirstLoss.NumRetransmittableBytes = 1200;
+    FirstLoss.PersistentCongestion = FALSE;
+    FirstLoss.LargestPacketNumberLost = 5;
+    FirstLoss.LargestSentPacketNumber = 10;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &FirstLoss);
 
     // Create persistent congestion event
     QUIC_LOSS_EVENT LossEvent;
