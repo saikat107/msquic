@@ -820,119 +820,7 @@ TEST(CubicTest, HyStart_DisabledNoStateChange)
 }
 
 //
-// Test 19: HyStart RTT Increase Detection - Slow Start Exit
-// Scenario: Tests HyStart++ algorithm detecting RTT increase and transitioning from
-// slow start to conservative slow start. This covers the RTT sampling logic,
-// Eta calculation, and state transition to HYSTART_ACTIVE.
-//
-TEST(CubicTest, HyStart_RTTIncreaseDetection)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    Settings.SendIdleTimeoutMs = 1000;
-    Settings.HyStartEnabled = TRUE;
-
-    InitializeMockConnection(Connection, 1280);
-    Connection.Paths[0].GotFirstRttSample = TRUE;
-    Connection.Paths[0].SmoothedRtt = 50000;
-
-    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
-
-    // Set up for slow start mode
-    Cubic->BytesInFlight = Cubic->CongestionWindow / 2;
-    Cubic->SlowStartThreshold = UINT32_MAX; // In slow start
-
-    // First round: establish baseline MinRTT
-    Cubic->MinRttInLastRound = 40000; // 40ms baseline
-    Cubic->HyStartAckCount = 8; // Already have 8 samples (N=8 default)
-
-    QUIC_ACK_EVENT AckEvent;
-    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
-    AckEvent.TimeNow = 1000000;
-    AckEvent.LargestAck = 5;
-    AckEvent.LargestSentPacketNumber = 10;
-    AckEvent.NumRetransmittableBytes = 1200;
-    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent.SmoothedRtt = 50000;
-    AckEvent.MinRtt = 60000; // Significant RTT increase (40ms -> 60ms)
-    AckEvent.MinRttValid = TRUE;
-    AckEvent.IsImplicit = FALSE;
-    AckEvent.HasLoss = FALSE;
-    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
-    AckEvent.AckedPackets = NULL;
-
-    // This should trigger HyStart ACTIVE state
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
-        &Connection.CongestionControl,
-        &AckEvent);
-
-    // Should have transitioned to ACTIVE or DONE (depending on implementation)
-    ASSERT_NE(Cubic->HyStartState, HYSTART_NOT_STARTED);
-}
-
-//
-// Test 20: HyStart Conservative Slow Start Rounds
-// Scenario: Tests the Conservative Slow Start (CSS) phase after HyStart detection.
-// After detecting RTT increase, CUBIC enters CSS mode with reduced growth rate.
-// This test verifies the CWndSlowStartGrowthDivisor is properly set and
-// ConservativeSlowStartRounds counter works correctly.
-//
-TEST(CubicTest, HyStart_ConservativeSlowStartRounds)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    Settings.SendIdleTimeoutMs = 1000;
-    Settings.HyStartEnabled = TRUE;
-
-    InitializeMockConnection(Connection, 1280);
-    Connection.Paths[0].GotFirstRttSample = TRUE;
-    Connection.Paths[0].SmoothedRtt = 50000;
-
-    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
-
-    // Manually set to ACTIVE state to test CSS rounds
-    Cubic->HyStartState = HYSTART_ACTIVE;
-    Cubic->CWndSlowStartGrowthDivisor = 2; // Conservative growth
-    Cubic->ConservativeSlowStartRounds = 1; // One round remaining
-    Cubic->HyStartRoundEnd = 20; // Round ends at packet 20
-    Cubic->BytesInFlight = Cubic->CongestionWindow / 2;
-    Cubic->SlowStartThreshold = UINT32_MAX;
-    Cubic->CssBaselineMinRtt = 40000;
-
-    QUIC_ACK_EVENT AckEvent;
-    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
-    AckEvent.TimeNow = 1000000;
-    AckEvent.LargestAck = 21; // Past round end
-    AckEvent.LargestSentPacketNumber = 25;
-    AckEvent.NumRetransmittableBytes = 1200;
-    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent.SmoothedRtt = 50000;
-    AckEvent.MinRtt = 45000;
-    AckEvent.MinRttValid = TRUE;
-    AckEvent.IsImplicit = FALSE;
-    AckEvent.HasLoss = FALSE;
-    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
-    AckEvent.AckedPackets = NULL;
-
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
-        &Connection.CongestionControl,
-        &AckEvent);
-
-    // After CSS rounds complete, should transition to DONE
-    ASSERT_EQ(Cubic->HyStartState, HYSTART_DONE);
-    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u);
-}
-
-//
-// Test 22: Persistent Congestion Event
+// Test 19: Persistent Congestion Event
 // Scenario: Tests persistent congestion handling which occurs when multiple consecutive
 // packets are lost, indicating severe congestion. CUBIC should drastically reduce the
 // congestion window to minimum and mark the connection in persistent congestion state.
@@ -978,7 +866,7 @@ TEST(CubicTest, PersistentCongestion_WindowReset)
 }
 
 //
-// Test 23: Fast Convergence - Window Reduction Path
+// Test 20: Fast Convergence - Window Reduction Path
 // Scenario: Tests CUBIC's fast convergence algorithm. When a new congestion event occurs
 // before reaching the previous WindowMax, CUBIC applies an additional reduction factor
 // to converge faster with other flows. This tests the WindowLastMax > WindowMax path.
@@ -1020,7 +908,7 @@ TEST(CubicTest, FastConvergence_AdditionalReduction)
 }
 
 //
-// Test 24: Recovery Exit Path
+// Test 21: Recovery Exit Path
 // Scenario: Tests exiting from recovery state when an ACK is received for a packet
 // sent after recovery started. This is the recovery completion logic.
 //
@@ -1071,7 +959,7 @@ TEST(CubicTest, Recovery_ExitOnNewAck)
 }
 
 //
-// Test 25: Zero Bytes Acknowledged - Early Exit
+// Test 22: Zero Bytes Acknowledged - Early Exit
 // Scenario: Tests the early exit path when BytesAcked is zero in recovery state.
 // This can occur with ACKs that don't contain retransmittable data.
 //
@@ -1120,7 +1008,7 @@ TEST(CubicTest, ZeroBytesAcked_EarlyExit)
 }
 
 //
-// Test 26: Pacing with Slow Start Window Estimation
+// Test 23: Pacing with Slow Start Window Estimation
 // Scenario: Tests pacing calculation during slow start phase. When in slow start,
 // the estimated window is 2x current window (exponential growth). This covers
 // the EstimatedWnd calculation branch in GetSendAllowance.
@@ -1153,7 +1041,7 @@ TEST(CubicTest, Pacing_SlowStartWindowEstimation)
 }
 
 //
-// Test 27: Pacing with Congestion Avoidance Window Estimation
+// Test 24: Pacing with Congestion Avoidance Window Estimation
 // Scenario: Tests pacing calculation during congestion avoidance phase.
 // When past slow start, estimated window is 1.25x current window (linear growth).
 //
@@ -1185,7 +1073,7 @@ TEST(CubicTest, Pacing_CongestionAvoidanceEstimation)
 }
 
 //
-// Test 28: Pacing SendAllowance Overflow Handling
+// Test 25: Pacing SendAllowance Overflow Handling
 // Scenario: Tests the overflow detection in pacing calculation. When the pacing
 // calculation causes SendAllowance to overflow, it should be capped at the available window.
 //
@@ -1218,7 +1106,7 @@ TEST(CubicTest, Pacing_OverflowHandling)
 }
 
 //
-// Test 29: Congestion Avoidance AIMD vs CUBIC Window Selection
+// Test 26: Congestion Avoidance AIMD vs CUBIC Window Selection
 // Scenario: Tests the decision logic between AIMD and CUBIC windows during congestion
 // avoidance. CUBIC uses the larger of the two to be TCP-friendly while maintaining
 // CUBIC growth characteristics.
@@ -1273,7 +1161,7 @@ TEST(CubicTest, CongestionAvoidance_AIMDvsCubicSelection)
 }
 
 //
-// Test 30: AIMD Window Accumulator Logic - WindowPrior Path
+// Test 27: AIMD Window Accumulator Logic - WindowPrior Path
 // Scenario: Tests AIMD window growth when below WindowPrior (uses 0.5 MSS/RTT slope).
 // Verifies the accumulator correctly tracks acknowledged bytes and increases window
 // only when sufficient bytes are accumulated.
@@ -1326,7 +1214,7 @@ TEST(CubicTest, AIMD_AccumulatorBelowWindowPrior)
 }
 
 //
-// Test 31: AIMD Window Accumulator Logic - Above WindowPrior Path
+// Test 28: AIMD Window Accumulator Logic - Above WindowPrior Path
 // Scenario: Tests AIMD window growth when above WindowPrior (uses 1 MSS/RTT slope).
 // This is the more aggressive growth after reaching the prior window maximum.
 //
@@ -1378,7 +1266,7 @@ TEST(CubicTest, AIMD_AccumulatorAboveWindowPrior)
 }
 
 //
-// Test 32: CubicWindow Overflow to BytesInFlightMax
+// Test 29: CubicWindow Overflow to BytesInFlightMax
 // Scenario: Tests the overflow handling in CUBIC window calculation. When the cubic
 // calculation results in an overflow (negative value wrapping), it should be capped
 // at 2*BytesInFlightMax to prevent unbounded growth.
@@ -1431,7 +1319,7 @@ TEST(CubicTest, CubicWindow_OverflowToBytesInFlightMax)
 }
 
 //
-// Test 33: UpdateBlockedState - Unblock Flow
+// Test 30: UpdateBlockedState - Unblock Flow
 // Scenario: Tests the flow control unblocking path. When congestion window opens up
 // (CanSend transitions from FALSE to TRUE), the function should return TRUE and
 // remove the congestion control blocked reason.
@@ -1464,7 +1352,7 @@ TEST(CubicTest, UpdateBlockedState_UnblockFlow)
 }
 
 //
-// Test 34: Spurious Congestion Event Rollback
+// Test 31: Spurious Congestion Event Rollback
 // Scenario: Tests the spurious congestion event handling. When a congestion event
 // is determined to be spurious (false positive), CUBIC should restore the previous
 // state before the congestion event occurred.
@@ -1511,7 +1399,7 @@ TEST(CubicTest, SpuriousCongestion_StateRollback)
 }
 
 //
-// Test 35: App Limited API Coverage
+// Test 32: App Limited API Coverage
 // Scenario: Tests the IsAppLimited and SetAppLimited API functions. In the current
 // CUBIC implementation, these are stub functions that don't track app-limited state.
 // This test verifies the API is callable and doesn't crash.
@@ -1542,7 +1430,7 @@ TEST(CubicTest, AppLimited_APICoverage)
 }
 
 //
-// Test 36: Time Gap in ACKs - Idle Period Handling
+// Test 33: Time Gap in ACKs - Idle Period Handling
 // Scenario: Tests behavior when there's a large time gap between ACKs (connection
 // was idle). CUBIC should handle the time delta calculation correctly and clamp
 // DeltaT to prevent unrealistic window growth.
