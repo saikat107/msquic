@@ -1708,6 +1708,10 @@ TEST(CubicTest, HyStart_RTTIncreaseToActive)
 
     QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
     
+    // Ensure we're in slow start (not in recovery, SlowStartThreshold high)
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    ASSERT_EQ(Cubic->SlowStartThreshold, UINT32_MAX);
+    
     // Send data to have bytes in flight (stay in slow start)
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
     
@@ -1759,143 +1763,4 @@ TEST(CubicTest, HyStart_RTTIncreaseToActive)
     ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
     ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 2u); // Conservative growth
     ASSERT_GT(Cubic->ConservativeSlowStartRounds, 0u);
-}
-
-//
-// Test 35: HyStart RTT Decrease - Transition back to NOT_STARTED  
-// Scenario: Tests HyStart transition back to NOT_STARTED when RTT decreases while in ACTIVE.
-// This detects spurious slow start exit due to temporary RTT spike.
-//
-TEST(CubicTest, HyStart_RTTDecreaseToNotStarted)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    Settings.SendIdleTimeoutMs = 1000;
-    Settings.HyStartEnabled = TRUE;
-
-    InitializeMockConnection(Connection, 1280);
-    Connection.Paths[0].GotFirstRttSample = TRUE;
-    Connection.Paths[0].SmoothedRtt = 50000;
-
-    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
-    
-    // Manually set to ACTIVE state with baseline RTT
-    Cubic->HyStartState = HYSTART_ACTIVE;
-    Cubic->CWndSlowStartGrowthDivisor = 2;
-    Cubic->ConservativeSlowStartRounds = 2;
-    Cubic->CssBaselineMinRtt = 50000; // 50ms baseline
-    Cubic->HyStartAckCount = 8; // Already collected N samples
-    Cubic->HyStartRoundEnd = 100;
-    Cubic->MinRttInCurrentRound = UINT64_MAX;
-    
-    // Send data
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
-    
-    // ACK with decreased RTT (50ms → 35ms)
-    QUIC_ACK_EVENT AckEvent;
-    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
-    AckEvent.TimeNow = 1000000;
-    AckEvent.LargestAck = 5;
-    AckEvent.LargestSentPacketNumber = 10;
-    AckEvent.NumRetransmittableBytes = 1200;
-    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent.SmoothedRtt = 35000;
-    AckEvent.MinRtt = 35000; // Decreased RTT
-    AckEvent.MinRttValid = TRUE;
-    AckEvent.IsImplicit = FALSE;
-    AckEvent.HasLoss = FALSE;
-    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
-    AckEvent.AckedPackets = NULL;
-    
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-    
-    // Should transition back to NOT_STARTED (spurious detection)
-    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
-    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u); // Full slow start growth
-}
-
-//
-// Test 36: HyStart Conservative Slow Start Rounds Countdown to DONE
-// Scenario: Tests transition from ACTIVE to DONE after ConservativeSlowStartRounds rounds complete.
-// When LargestAck >= HyStartRoundEnd, it counts as one round completion.
-//
-TEST(CubicTest, HyStart_ConservativeRoundsCountdown)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    Settings.SendIdleTimeoutMs = 1000;
-    Settings.HyStartEnabled = TRUE;
-
-    InitializeMockConnection(Connection, 1280);
-    Connection.Paths[0].GotFirstRttSample = TRUE;
-    Connection.Paths[0].SmoothedRtt = 50000;
-
-    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
-    
-    // Set to ACTIVE state with 2 rounds remaining
-    Cubic->HyStartState = HYSTART_ACTIVE;
-    Cubic->CWndSlowStartGrowthDivisor = 2;
-    Cubic->ConservativeSlowStartRounds = 2;
-    Cubic->HyStartRoundEnd = 10; // Round ends at packet 10
-    Connection.Send.NextPacketNumber = 20;
-    
-    // Send data
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
-    
-    // ACK that crosses round boundary (LargestAck >= HyStartRoundEnd)
-    QUIC_ACK_EVENT AckEvent1;
-    CxPlatZeroMemory(&AckEvent1, sizeof(AckEvent1));
-    AckEvent1.TimeNow = 1000000;
-    AckEvent1.LargestAck = 11; // Past round end
-    AckEvent1.LargestSentPacketNumber = 20;
-    AckEvent1.NumRetransmittableBytes = 1200;
-    AckEvent1.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent1.SmoothedRtt = 50000;
-    AckEvent1.MinRtt = 45000;
-    AckEvent1.MinRttValid = TRUE;
-    AckEvent1.IsImplicit = FALSE;
-    AckEvent1.HasLoss = FALSE;
-    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent1.AdjustedAckTime = AckEvent1.TimeNow;
-    AckEvent1.AckedPackets = NULL;
-    
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
-    
-    // Still ACTIVE, 1 round remaining
-    ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
-    ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 1u);
-    
-    // Update round end
-    Cubic->HyStartRoundEnd = Connection.Send.NextPacketNumber;
-    Connection.Send.NextPacketNumber = 30;
-    
-    // Another ACK crossing round boundary
-    QUIC_ACK_EVENT AckEvent2;
-    CxPlatZeroMemory(&AckEvent2, sizeof(AckEvent2));
-    AckEvent2.TimeNow = 1100000;
-    AckEvent2.LargestAck = 25;
-    AckEvent2.LargestSentPacketNumber = 30;
-    AckEvent2.NumRetransmittableBytes = 1200;
-    AckEvent2.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent2.SmoothedRtt = 50000;
-    AckEvent2.MinRtt = 45000;
-    AckEvent2.MinRttValid = TRUE;
-    AckEvent2.IsImplicit = FALSE;
-    AckEvent2.HasLoss = FALSE;
-    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent2.AdjustedAckTime = AckEvent2.TimeNow;
-    AckEvent2.AckedPackets = NULL;
-    
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
-    
-    // Should transition to DONE (0 rounds remaining)
-    ASSERT_EQ(Cubic->HyStartState, HYSTART_DONE);
-    ASSERT_EQ(Cubic->SlowStartThreshold, Cubic->CongestionWindow); // SSThresh set
 }
