@@ -879,26 +879,17 @@ TEST(CubicTest, PersistentCongestion_WindowReset)
     QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
     uint32_t InitialWindow = Cubic->CongestionWindow;
 
-    // Set up congestion state by sending data and triggering a prior congestion event
+    // Send data
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
-    
-    // First congestion event to set HasHadCongestionEvent
-    QUIC_LOSS_EVENT FirstLoss;
-    CxPlatZeroMemory(&FirstLoss, sizeof(FirstLoss));
-    FirstLoss.NumRetransmittableBytes = 1200;
-    FirstLoss.PersistentCongestion = FALSE;
-    FirstLoss.LargestPacketNumberLost = 5;
-    FirstLoss.LargestSentPacketNumber = 10;
-    
-    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &FirstLoss);
+    Connection.Send.NextPacketNumber = 10;
 
-    // Create persistent congestion event
+    // Create persistent congestion event directly (first loss will trigger it if PersistentCongestion=TRUE)
     QUIC_LOSS_EVENT LossEvent;
     CxPlatZeroMemory(&LossEvent, sizeof(LossEvent));
     LossEvent.NumRetransmittableBytes = 5000;
     LossEvent.PersistentCongestion = TRUE; // Signal persistent congestion
-    LossEvent.LargestPacketNumberLost = 10;
-    LossEvent.LargestSentPacketNumber = 15;
+    LossEvent.LargestPacketNumberLost = 8;
+    LossEvent.LargestSentPacketNumber = 10;
 
     Connection.CongestionControl.QuicCongestionControlOnDataLost(
         &Connection.CongestionControl,
