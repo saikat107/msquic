@@ -1712,16 +1712,20 @@ TEST(CubicTest, HyStart_RTTIncreaseToActive)
     ASSERT_FALSE(Cubic->IsInRecovery);
     ASSERT_EQ(Cubic->SlowStartThreshold, UINT32_MAX);
     
+    // Set initial round end
+    Connection.Send.NextPacketNumber = 20;
+    Cubic->HyStartRoundEnd = 20; // Round ends at packet 20, so packets 1-19 won't trigger reset
+    
     // Send data to have bytes in flight (stay in slow start)
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
     
-    // Simulate N-1 ACKs with low RTT to collect samples
-    for (int i = 0; i < 7; i++) {
+    // ROUND 1: Simulate N ACKs with low RTT to collect samples (LargestAck 1-8, won't cross boundary)
+    for (int i = 0; i < 8; i++) {
         QUIC_ACK_EVENT AckEvent;
         CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
         AckEvent.TimeNow = 1000000 + (i * 50000);
-        AckEvent.LargestAck = i + 1;
-        AckEvent.LargestSentPacketNumber = 10;
+        AckEvent.LargestAck = i + 1; // 1, 2, 3, ..., 8 (< 20)
+        AckEvent.LargestSentPacketNumber = 20;
         AckEvent.NumRetransmittableBytes = 600;
         AckEvent.NumTotalAckedRetransmittableBytes = 600;
         AckEvent.SmoothedRtt = 40000;
@@ -1736,20 +1740,72 @@ TEST(CubicTest, HyStart_RTTIncreaseToActive)
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
     }
     
-    // Set MinRttInLastRound for comparison
-    Cubic->MinRttInLastRound = Cubic->MinRttInCurrentRound;
-    Cubic->MinRttInCurrentRound = UINT64_MAX;
+    // At this point, HyStartAckCount should be 8, MinRttInCurrentRound = 38000
+    ASSERT_EQ(Cubic->HyStartAckCount, 8u);
     
-    // Send 8th ACK with significantly higher RTT (triggers transition)
+    // ACK that crosses round boundary (LargestAck >= HyStartRoundEnd = 20)
+    // This triggers CubicCongestionHyStartResetPerRttRound which sets MinRttInLastRound
+    QUIC_ACK_EVENT RoundEndAck;
+    CxPlatZeroMemory(&RoundEndAck, sizeof(RoundEndAck));
+    RoundEndAck.TimeNow = 1500000;
+    RoundEndAck.LargestAck = 20; // Crosses round boundary
+    RoundEndAck.LargestSentPacketNumber = 30;
+    RoundEndAck.NumRetransmittableBytes = 600;
+    RoundEndAck.NumTotalAckedRetransmittableBytes = 600;
+    RoundEndAck.SmoothedRtt = 40000;
+    RoundEndAck.MinRtt = 38000;
+    RoundEndAck.MinRttValid = TRUE;
+    RoundEndAck.IsImplicit = FALSE;
+    RoundEndAck.HasLoss = FALSE;
+    RoundEndAck.IsLargestAckedPacketAppLimited = FALSE;
+    RoundEndAck.AdjustedAckTime = RoundEndAck.TimeNow;
+    RoundEndAck.AckedPackets = NULL;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &RoundEndAck);
+    
+    // Round reset should have happened: HyStartAckCount = 0, MinRttInLastRound = 38000
+    ASSERT_EQ(Cubic->HyStartAckCount, 0u);
+    ASSERT_EQ(Cubic->MinRttInLastRound, 38000u);
+    
+    // Update NextPacketNumber for new round
+    Connection.Send.NextPacketNumber = 40;
+    
+    // ROUND 2: Collect N-1 samples again with low RTT (LargestAck 21-27, won't cross boundary)
+    for (int i = 0; i < 7; i++) {
+        QUIC_ACK_EVENT AckEvent;
+        CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+        AckEvent.TimeNow = 2000000 + (i * 50000);
+        AckEvent.LargestAck = 21 + i; // 21, 22, 23, ..., 27
+        AckEvent.LargestSentPacketNumber = 40;
+        AckEvent.NumRetransmittableBytes = 600;
+        AckEvent.NumTotalAckedRetransmittableBytes = 600;
+        AckEvent.SmoothedRtt = 40000;
+        AckEvent.MinRtt = 39000; // Still relatively low
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+        AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+        AckEvent.AckedPackets = NULL;
+        
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+    }
+    
+    // Now HyStartAckCount should be 7
+    ASSERT_EQ(Cubic->HyStartAckCount, 7u);
+    
+    // 8th ACK with significantly higher RTT (triggers transition)
+    // Eta = MinRttInLastRound / 8 = 38000 / 8 = 4750
+    // Need MinRttInCurrentRound >= 38000 + 4750 = 42750
     QUIC_ACK_EVENT AckEvent;
     CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
-    AckEvent.TimeNow = 1400000;
-    AckEvent.LargestAck = 8;
-    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.TimeNow = 2400000;
+    AckEvent.LargestAck = 28;
+    AckEvent.LargestSentPacketNumber = 40;
     AckEvent.NumRetransmittableBytes = 600;
     AckEvent.NumTotalAckedRetransmittableBytes = 600;
     AckEvent.SmoothedRtt = 50000;
-    AckEvent.MinRtt = 50000; // Increased RTT (38ms → 50ms, increase > Eta)
+    AckEvent.MinRtt = 50000; // 50ms > 42.75ms threshold
     AckEvent.MinRttValid = TRUE;
     AckEvent.IsImplicit = FALSE;
     AckEvent.HasLoss = FALSE;
