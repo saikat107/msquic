@@ -1701,26 +1701,9 @@ TEST(CubicTest, TimeGap_IdlePeriodHandling)
     ASSERT_GE(Cubic->CongestionWindow, WindowAfterFirst);
 }
 
-// NOTE: HyStart++ (lines 477-537 in cubic.c) cannot be reliably unit tested
-// because:
-// 1. The logic requires complex state combinations (specific HyStartAckCount,
-//    MinRtt values, round boundaries, and timing) that are difficult to achieve
-//    through the public API
-// 2. Window growth dynamics interfere with setting up the required state
-// 3. The code is executed but state transitions don't occur as expected even
-//    with direct state manipulation
-// 4. These paths are better tested through integration testing where real
-//    network conditions can trigger the HyStart++ state machine naturally
-//
-// Lines not covered by unit tests:
-// - 481-486: Sample collection (HyStartAckCount < N)
-// - 487-510: RTT increase detection → HYSTART_ACTIVE transition
-// - 511-518: RTT decrease detection → HYSTART_NOT_STARTED transition
-// - 524-537: Round boundary crossing and conservative rounds countdown
-
 //
 // ============================================================================
-// HyStart++ State Transition Tests (Following HYSTART_STATE_TRANSITION_MODEL.md)
+// HyStart++ State Transition Tests
 // ============================================================================
 //
 
