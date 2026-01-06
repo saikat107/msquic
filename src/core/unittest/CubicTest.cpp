@@ -2974,16 +2974,8 @@ TEST(CubicTest, HyStart_ConservativeSlowStartRounds_TransitionToDone)
     }
 }
 
-// NOTE: Lines 550-559 in cubic.c (slow start window overflow into congestion avoidance)
-// are difficult to reliably unit test due to complex state dependencies. This logic
-// requires the congestion window to grow beyond SlowStartThreshold during slow start,
-// which involves precise control of BytesInFlight, ACK event fields, and avoiding
-// other code paths that can reset or modify the window unexpectedly. This behavior
-// is better tested through integration tests with real network conditions.
-
-
 //
-// Test: Congestion Avoidance Time Gap - Overflow Protection
+// Test 48: Congestion Avoidance Time Gap - Overflow Protection
 // Scenario: Covers the overflow protection logic when a large time gap causes
 // TimeOfCongAvoidStart adjustment to overflow. Tests the boundary condition
 // where TimeOfCongAvoidStart might exceed TimeNowUs after adjustment.
@@ -3007,18 +2999,18 @@ TEST(CubicTest, CongestionAvoidance_TimeGapOverflowProtection)
     // Force into congestion avoidance by setting window >= threshold
     Cubic->SlowStartThreshold = 10000;
     Cubic->CongestionWindow = 20000;
-    
+
     // Set TimeOfCongAvoidStart to a value where adding a gap would overflow
     uint64_t TimeNowUs = 5000000; // 5 seconds
     Cubic->TimeOfCongAvoidStart = UINT64_MAX - 2000000; // Very close to max
     Cubic->TimeOfLastAckValid = TRUE;
     Cubic->TimeOfLastAck = TimeNowUs - 2000000; // 2 seconds ago
-    
+
     // TimeSinceLastAck = 5000000 - 3000000 = 2000000 us (2 seconds)
     // This is > SendIdleTimeoutMs (1000ms = 1000000us)
     // This is > SmoothedRtt + 4*RttVariance = 50000 + 40000 = 90000us
     // So the gap adjustment will be triggered
-    
+
     // TimeOfCongAvoidStart + TimeSinceLastAck would overflow:
     // (UINT64_MAX - 2000000) + 2000000 = UINT64_MAX + 0, wrapping around
     // After adding, TimeOfCongAvoidStart would be > TimeNowUs
