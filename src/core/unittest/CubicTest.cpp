@@ -2545,11 +2545,9 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_EtaCalculationAndCondition)
 }
 
 //
-// Test: HyStart++ Delay Increase Detection - Trigger ACTIVE Transition
-// Scenario: Follows up on Test 44, covering lines 498-509 in cubic.c by triggering
+// Test 45: HyStart++ Delay Increase Detection - Trigger ACTIVE Transition
+// Scenario: Triggers the delay increase detection logic with
 // a significant RTT increase that causes transition from NOT_STARTED to ACTIVE state.
-// Tests the complete condition (line 497-499) evaluating to TRUE and the resulting
-// state changes (lines 504-509).
 //
 TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
 {
@@ -2576,7 +2574,7 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
     // Set Connection.Send.NextPacketNumber high to avoid round boundary crossing
     Connection.Send.NextPacketNumber = 100;
     Cubic->HyStartRoundEnd = 100;
-    
+
     // Set up initial MinRttInLastRound to enable delay increase detection
     // Using 40000 us (40ms) as baseline from previous round
     Cubic->MinRttInLastRound = 40000;
@@ -2619,12 +2617,10 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
     ASSERT_EQ(Cubic->MinRttInCurrentRound, 46000u); // Min of all 46000 samples
 
     // Phase 2: Send one more ACK to trigger the delay increase detection
-    // Now HyStartAckCount >= 8 and HyStartState == NOT_STARTED, so line 487 is true
-    // The condition on lines 497-499 checks:
+    // Now HyStartAckCount >= 8 and HyStartState == NOT_STARTED
     // - MinRttInLastRound (40000) != UINT64_MAX: TRUE
-    // - MinRttInCurrentRound (46000) != UINT64_MAX: TRUE  
+    // - MinRttInCurrentRound (46000) != UINT64_MAX: TRUE
     // - MinRttInCurrentRound (46000) >= MinRttInLastRound (40000) + Eta (5000): TRUE
-    // This will trigger lines 504-509
     {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
@@ -2651,7 +2647,7 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
 
         // Should transition to HYSTART_ACTIVE (line 504)
         ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
-        
+
         // Verify state changes from lines 505-509
         ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 4u); // QUIC_CONSERVATIVE_SLOW_START_DEFAULT_GROWTH_DIVISOR
         ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 5u); // QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS
