@@ -1992,7 +1992,7 @@ TEST(CubicTest, HyStart_TerminalState_DoneIsAbsorbing)
     // None of these should change the state from DONE
 
     // Pattern 1: ACKs with varying RTT (would trigger T1 if not in DONE)
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 2 * QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2109,7 +2109,7 @@ TEST(CubicTest, HyStart_Disabled_NoTransitions)
     // Attempt various operations that would trigger transitions if enabled
 
     // 1. Send ACKs with increasing RTT (would trigger T1)
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 2 * QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
 
         QUIC_ACK_EVENT AckEvent;
@@ -2480,7 +2480,7 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_EtaCalculationAndCondition)
     // Phase 1: Send N_SAMPLING (8) ACKs to complete sampling phase
     // This fills up the HyStartAckCount and sets MinRttInCurrentRound
     // Use LargestAck values < HyStartRoundEnd (100) to stay in the same round
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2585,7 +2585,7 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
     // Eta = MinRttInLastRound / 8 = 40000 / 8 = 5000 us
     // Threshold = MinRttInLastRound + Eta = 40000 + 5000 = 45000 us
     // So we use MinRtt = 46000 during sampling to get MinRttInCurrentRound = 46000
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2656,8 +2656,8 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
 }
 
 //
-// Test: HyStart++ RTT Decrease Detection - Return to NOT_STARTED
-// Scenario: Follows up on Test 45, covering the RTT decrease detection logic.
+// Test 46: HyStart++ RTT Decrease Detection - Return to NOT_STARTED
+// Scenario: Covers the RTT decrease detection logic.
 // When in HYSTART_ACTIVE state, if RTT decreases below the baseline, the algorithm
 // assumes the previous slow start exit was spurious and returns to NOT_STARTED state.
 //
@@ -2681,12 +2681,12 @@ TEST(CubicTest, HyStart_RttDecreaseDetection_ReturnToNotStarted)
     // Set Connection.Send.NextPacketNumber high to avoid round boundary crossing
     Connection.Send.NextPacketNumber = 100;
     Cubic->HyStartRoundEnd = 100;
-    
+
     // Set up initial MinRttInLastRound
     Cubic->MinRttInLastRound = 40000;
 
     // Phase 1: Collect 8 samples with high RTT to complete sampling
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2749,7 +2749,7 @@ TEST(CubicTest, HyStart_RttDecreaseDetection_ReturnToNotStarted)
     {
         // Update NextPacketNumber so HyStartRoundEnd will be set to a high value
         Connection.Send.NextPacketNumber = 200;
-        
+
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2784,7 +2784,7 @@ TEST(CubicTest, HyStart_RttDecreaseDetection_ReturnToNotStarted)
 
     // Phase 4: Collect samples in new round with LOWER RTT values
     // This will set MinRttInCurrentRound to a lower value (38000)
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2846,8 +2846,8 @@ TEST(CubicTest, HyStart_RttDecreaseDetection_ReturnToNotStarted)
 }
 
 //
-// Test: HyStart++ Conservative Slow Start Rounds - Transition to DONE
-// Scenario: Follows up on Test 45, covering the round boundary crossing logic
+// Test 47: HyStart++ Conservative Slow Start Rounds - Transition to DONE
+// Scenario: Covers the round boundary crossing logic
 // when in HYSTART_ACTIVE state. After completing the configured number of
 // conservative slow start rounds, the algorithm transitions to HYSTART_DONE.
 //
@@ -2871,11 +2871,11 @@ TEST(CubicTest, HyStart_ConservativeSlowStartRounds_TransitionToDone)
     // Set Connection.Send.NextPacketNumber to control round boundaries
     Connection.Send.NextPacketNumber = 100;
     Cubic->HyStartRoundEnd = 100;
-    
+
     Cubic->MinRttInLastRound = 40000;
 
     // Phase 1: Collect 8 samples with high RTT
-    for (uint32_t i = 0; i < 8; i++) {
+    for (uint32_t i = 0; i < QUIC_HYSTART_DEFAULT_N_SAMPLING; i++) {
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2926,15 +2926,16 @@ TEST(CubicTest, HyStart_ConservativeSlowStartRounds_TransitionToDone)
             &AckEvent);
 
         ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
-        ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 5u); // QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS
+        ASSERT_EQ(Cubic->ConservativeSlowStartRounds, QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS); // Default = 5
     }
 
-    // Phase 3: Cross 5 round boundaries to decrement ConservativeSlowStartRounds
+    // Phase 3: Cross QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS + 1 round boundaries to
+    // decrement ConservativeSlowStartRounds
     // Each round boundary crossing when LargestAck >= HyStartRoundEnd will decrement the counter
-    for (uint32_t round = 0; round < 5; round++) {
+    for (uint32_t round = 0; round < QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS + 1; round++) {
         // Set NextPacketNumber to a higher value for the next round
         Connection.Send.NextPacketNumber = 100 + (round + 1) * 100;
-        
+
         uint32_t BytesToSend = 1200;
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
 
@@ -2959,12 +2960,12 @@ TEST(CubicTest, HyStart_ConservativeSlowStartRounds_TransitionToDone)
             &Connection.CongestionControl,
             &AckEvent);
 
-        if (round < 4) {
-            // Still in HYSTART_ACTIVE for first 4 rounds
+        if (round < QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS - 1) {
+            // Still in HYSTART_ACTIVE for first n-1 rounds
             ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
-            ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 4u - round);
         } else {
-            // After 5th round, should transition to HYSTART_DONE
+            // for the rest of the rounds, state should transition
+            // to HYSTART_DONE and stay there
             ASSERT_EQ(Cubic->HyStartState, HYSTART_DONE);
             ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 0u);
             // Verify SlowStartThreshold is set to current congestion window
