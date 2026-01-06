@@ -2974,5 +2974,84 @@ TEST(CubicTest, HyStart_ConservativeSlowStartRounds_TransitionToDone)
     }
 }
 
+// NOTE: Lines 550-559 in cubic.c (slow start window overflow into congestion avoidance)
+// are difficult to reliably unit test due to complex state dependencies. This logic
+// requires the congestion window to grow beyond SlowStartThreshold during slow start,
+// which involves precise control of BytesInFlight, ACK event fields, and avoiding
+// other code paths that can reset or modify the window unexpectedly. This behavior
+// is better tested through integration tests with real network conditions.
+
+
+//
+// Test: Congestion Avoidance Time Gap - Overflow Protection
+// Scenario: Covers the overflow protection logic when a large time gap causes
+// TimeOfCongAvoidStart adjustment to overflow. Tests the boundary condition
+// where TimeOfCongAvoidStart might exceed TimeNowUs after adjustment.
+//
+TEST(CubicTest, CongestionAvoidance_TimeGapOverflowProtection)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    Connection.Paths[0].GotFirstRttSample = TRUE;
+    Connection.Paths[0].SmoothedRtt = 50000;
+    Connection.Paths[0].RttVariance = 10000;
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Force into congestion avoidance by setting window >= threshold
+    Cubic->SlowStartThreshold = 10000;
+    Cubic->CongestionWindow = 20000;
+    
+    // Set TimeOfCongAvoidStart to a value where adding a gap would overflow
+    uint64_t TimeNowUs = 5000000; // 5 seconds
+    Cubic->TimeOfCongAvoidStart = UINT64_MAX - 2000000; // Very close to max
+    Cubic->TimeOfLastAckValid = TRUE;
+    Cubic->TimeOfLastAck = TimeNowUs - 2000000; // 2 seconds ago
+    
+    // TimeSinceLastAck = 5000000 - 3000000 = 2000000 us (2 seconds)
+    // This is > SendIdleTimeoutMs (1000ms = 1000000us)
+    // This is > SmoothedRtt + 4*RttVariance = 50000 + 40000 = 90000us
+    // So the gap adjustment will be triggered
+    
+    // TimeOfCongAvoidStart + TimeSinceLastAck would overflow:
+    // (UINT64_MAX - 2000000) + 2000000 = UINT64_MAX + 0, wrapping around
+    // After adding, TimeOfCongAvoidStart would be > TimeNowUs
+    // Line 585 checks CxPlatTimeAtOrBefore64(TimeNowUs, TimeOfCongAvoidStart)
+    // If true (TimeNowUs <= TimeOfCongAvoidStart), clamp to TimeNowUs
+
+    // Send data
+    uint32_t BytesToSend = 1200;
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
+
+    QUIC_ACK_EVENT AckEvent;
+    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+    AckEvent.TimeNow = TimeNowUs;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 15;
+    AckEvent.NumRetransmittableBytes = BytesToSend;
+    AckEvent.NumTotalAckedRetransmittableBytes = BytesToSend;
+    AckEvent.SmoothedRtt = 50000;
+    AckEvent.MinRtt = 45000;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl,
+        &AckEvent);
+
+    // TimeOfCongAvoidStart should be clamped to TimeNowUs to prevent issues
+    // in TimeInCongAvoid calculation
+    ASSERT_EQ(Cubic->TimeOfCongAvoidStart, TimeNowUs);
+}
 
 
