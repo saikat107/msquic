@@ -2543,3 +2543,120 @@ TEST(CubicTest, HyStart_DelayIncreaseDetection_EtaCalculationAndCondition)
         ASSERT_EQ(Cubic->HyStartAckCount, 8u); // Should still be 8, not reset
     }
 }
+
+//
+// Test: HyStart++ Delay Increase Detection - Trigger ACTIVE Transition
+// Scenario: Follows up on Test 44, covering lines 498-509 in cubic.c by triggering
+// a significant RTT increase that causes transition from NOT_STARTED to ACTIVE state.
+// Tests the complete condition (line 497-499) evaluating to TRUE and the resulting
+// state changes (lines 504-509).
+//
+TEST(CubicTest, HyStart_DelayIncreaseDetection_TriggerActiveTransition)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+    Settings.HyStartEnabled = TRUE;
+
+    InitializeMockConnection(Connection, 1280);
+    Connection.Settings.HyStartEnabled = TRUE;
+    Connection.Paths[0].GotFirstRttSample = TRUE;
+    Connection.Paths[0].SmoothedRtt = 50000;
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Verify initial state
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
+    ASSERT_EQ(Cubic->HyStartAckCount, 0u);
+    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u);
+
+    // Set Connection.Send.NextPacketNumber high to avoid round boundary crossing
+    Connection.Send.NextPacketNumber = 100;
+    Cubic->HyStartRoundEnd = 100;
+    
+    // Set up initial MinRttInLastRound to enable delay increase detection
+    // Using 40000 us (40ms) as baseline from previous round
+    Cubic->MinRttInLastRound = 40000;
+
+    // Phase 1: Send N_SAMPLING (8) ACKs with HIGHER RTT values
+    // MinRttInCurrentRound will be set to the minimum of these samples
+    // We want MinRttInCurrentRound to end up >= 45000 us
+    // Eta = MinRttInLastRound / 8 = 40000 / 8 = 5000 us
+    // Threshold = MinRttInLastRound + Eta = 40000 + 5000 = 45000 us
+    // So we use MinRtt = 46000 during sampling to get MinRttInCurrentRound = 46000
+    for (uint32_t i = 0; i < 8; i++) {
+        uint32_t BytesToSend = 1200;
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
+
+        QUIC_ACK_EVENT AckEvent;
+        CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+        AckEvent.TimeNow = 1000000 + (i * 10000);
+        AckEvent.LargestAck = 10 + i;  // 10..17, all < 100
+        AckEvent.LargestSentPacketNumber = 15 + i;
+        AckEvent.NumRetransmittableBytes = BytesToSend;
+        AckEvent.NumTotalAckedRetransmittableBytes = BytesToSend;
+        AckEvent.SmoothedRtt = 50000;
+        // Use consistently high MinRtt (46000) so MinRttInCurrentRound = 46000
+        AckEvent.MinRtt = 46000;
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+        AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+        AckEvent.AckedPackets = NULL;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+            &Connection.CongestionControl,
+            &AckEvent);
+    }
+
+    // After 8 ACKs, sampling phase is complete
+    ASSERT_EQ(Cubic->HyStartAckCount, 8u);
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
+    ASSERT_EQ(Cubic->MinRttInCurrentRound, 46000u); // Min of all 46000 samples
+
+    // Phase 2: Send one more ACK to trigger the delay increase detection
+    // Now HyStartAckCount >= 8 and HyStartState == NOT_STARTED, so line 487 is true
+    // The condition on lines 497-499 checks:
+    // - MinRttInLastRound (40000) != UINT64_MAX: TRUE
+    // - MinRttInCurrentRound (46000) != UINT64_MAX: TRUE  
+    // - MinRttInCurrentRound (46000) >= MinRttInLastRound (40000) + Eta (5000): TRUE
+    // This will trigger lines 504-509
+    {
+        uint32_t BytesToSend = 1200;
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
+
+        QUIC_ACK_EVENT AckEvent;
+        CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+        AckEvent.TimeNow = 1100000;
+        AckEvent.LargestAck = 20;  // Still < 100, no round crossing
+        AckEvent.LargestSentPacketNumber = 25;
+        AckEvent.NumRetransmittableBytes = BytesToSend;
+        AckEvent.NumTotalAckedRetransmittableBytes = BytesToSend;
+        AckEvent.SmoothedRtt = 50000;
+        AckEvent.MinRtt = 47000; // Doesn't matter for the condition, already have 8 samples
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+        AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+        AckEvent.AckedPackets = NULL;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+            &Connection.CongestionControl,
+            &AckEvent);
+
+        // Should transition to HYSTART_ACTIVE (line 504)
+        ASSERT_EQ(Cubic->HyStartState, HYSTART_ACTIVE);
+        
+        // Verify state changes from lines 505-509
+        ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 4u); // QUIC_CONSERVATIVE_SLOW_START_DEFAULT_GROWTH_DIVISOR
+        ASSERT_EQ(Cubic->ConservativeSlowStartRounds, 5u); // QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS
+        ASSERT_EQ(Cubic->CssBaselineMinRtt, 46000u); // Set to MinRttInCurrentRound
+    }
+}
+
+
