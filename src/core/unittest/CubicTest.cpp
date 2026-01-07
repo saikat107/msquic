@@ -40,14 +40,6 @@ static void InitializeMockConnection(
     Connection.Paths[0].SmoothedRtt = 0;
 }
 
-// TODO: Consider adding helper functions to reduce code duplication in HyStart++ tests (Tests 44-48).
-// Potential helpers:
-// - SetupHyStartConnection(): Common setup for HyStart-enabled connections
-// - SendAckEvent(): Reduce repetitive ACK event creation
-// - CollectHyStartSamples(): Simplify collection of N RTT samples
-// This would significantly reduce the ~100 lines of duplicated setup code across these tests.
-
-
 //
 // Test 1: Comprehensive initialization verification
 // Scenario: Verifies CubicCongestionControlInitialize correctly sets up all CUBIC state
