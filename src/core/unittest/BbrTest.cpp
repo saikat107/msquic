@@ -50,6 +50,34 @@ static void InitializeMockConnection(
 }
 
 //
+// Helper to allocate packet metadata for testing
+//
+static QUIC_SENT_PACKET_METADATA* AllocPacketMetadata(
+    uint64_t PacketNumber,
+    uint32_t PacketSize,
+    uint64_t SentTime,
+    uint64_t TotalBytesSent)
+{
+    QUIC_SENT_PACKET_METADATA* Packet = (QUIC_SENT_PACKET_METADATA*)CXPLAT_ALLOC_NONPAGED(
+        SIZEOF_QUIC_SENT_PACKET_METADATA(0), QUIC_POOL_TEST);
+    if (Packet == NULL) {
+        return NULL;
+    }
+    
+    CxPlatZeroMemory(Packet, SIZEOF_QUIC_SENT_PACKET_METADATA(0));
+    Packet->PacketNumber = PacketNumber;
+    Packet->PacketLength = (uint16_t)PacketSize;
+    Packet->SentTime = SentTime;
+    Packet->TotalBytesSent = TotalBytesSent;
+    Packet->Flags.HasLastAckedPacketInfo = FALSE;
+    Packet->Flags.IsAppLimited = FALSE;
+    Packet->FrameCount = 0;
+    Packet->Next = NULL;
+    
+    return Packet;
+}
+
+//
 // Test 1: Comprehensive initialization verification
 // Scenario: Verifies BbrCongestionControlInitialize correctly sets up all BBR state
 // including settings, function pointers, state flags, filters, and initial values.
@@ -436,6 +464,7 @@ TEST(BbrTest, OnDataAcknowledgedBasic)
 //
 // Test 12: State transition STARTUP → DRAIN
 // Scenario: Simulate bandwidth growth stalling for 3 rounds to find bottleneck and transition to DRAIN.
+// Uses packet metadata to enable bandwidth estimation.
 //
 TEST(BbrTest, StateTransitionStartupToDrain)
 {
@@ -449,40 +478,56 @@ TEST(BbrTest, StateTransitionStartupToDrain)
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
     uint64_t TimeNow = 0;
     uint64_t PacketNum = 0;
+    uint64_t TotalBytesSent = 0;
 
     // Initial state: STARTUP
     ASSERT_EQ(Bbr->BbrState, 0u);
     ASSERT_FALSE(Bbr->BtlbwFound);
 
-    // Simulate 3 rounds without significant bandwidth growth
-    // This triggers BtlbwFound = TRUE
+    // Simulate 4 rounds with minimal bandwidth growth
+    // This should trigger BtlbwFound = TRUE after 3 rounds of stalled growth
     for (int round = 0; round < 4; round++) {
-        // Send some packets
+        // Send packets and build metadata
+        QUIC_SENT_PACKET_METADATA* PacketArray[5];
         for (int i = 0; i < 5; i++) {
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-            PacketNum++;
+            uint32_t PacketSize = 1200;
+            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+            
+            TotalBytesSent += PacketSize;
+            PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, TimeNow, TotalBytesSent);
+            ASSERT_NE(PacketArray[i], nullptr);
+            
+            if (i > 0) {
+                PacketArray[i]->Next = PacketArray[i-1];
+            }
         }
 
         TimeNow += 50000; // 50ms per round
 
-        // ACK packets
+        // ACK all packets with bandwidth estimation
         QUIC_ACK_EVENT AckEvent = {};
         AckEvent.TimeNow = TimeNow;
+        AckEvent.AdjustedAckTime = TimeNow;
         AckEvent.LargestAck = PacketNum;
         AckEvent.LargestSentPacketNumber = PacketNum;
         AckEvent.NumRetransmittableBytes = 6000;
-        AckEvent.NumTotalAckedRetransmittableBytes = (round + 1) * 6000;
+        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
         AckEvent.IsImplicit = FALSE;
         AckEvent.HasLoss = FALSE;
         AckEvent.MinRttValid = TRUE;
         AckEvent.MinRtt = 50000;
         AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-        AckEvent.AckedPackets = NULL; // Simplified - no detailed packet metadata
+        AckEvent.AckedPackets = PacketArray[4]; // Head of linked list
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+        
+        // Free packet metadata
+        for (int i = 0; i < 5; i++) {
+            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
+        }
     }
 
-    // After 3 rounds of no growth, should find bottleneck and transition to DRAIN
+    // After 3-4 rounds without sufficient growth, should find bottleneck and transition to DRAIN
     ASSERT_TRUE(Bbr->BtlbwFound);
     ASSERT_EQ(Bbr->BbrState, 1u); // BBR_STATE_DRAIN
 }
@@ -501,55 +546,73 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-
-    // First get to DRAIN state by simulating startup completion
     uint64_t TimeNow = 0;
     uint64_t PacketNum = 0;
+    uint64_t TotalBytesSent = 0;
 
+    // First get to DRAIN state by simulating startup completion
     for (int round = 0; round < 4; round++) {
+        QUIC_SENT_PACKET_METADATA* PacketArray[5];
         for (int i = 0; i < 5; i++) {
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-            PacketNum++;
+            uint32_t PacketSize = 1200;
+            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+            
+            TotalBytesSent += PacketSize;
+            PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, TimeNow, TotalBytesSent);
+            ASSERT_NE(PacketArray[i], nullptr);
+            
+            if (i > 0) {
+                PacketArray[i]->Next = PacketArray[i-1];
+            }
         }
+
         TimeNow += 50000;
 
         QUIC_ACK_EVENT AckEvent = {};
         AckEvent.TimeNow = TimeNow;
+        AckEvent.AdjustedAckTime = TimeNow;
         AckEvent.LargestAck = PacketNum;
         AckEvent.LargestSentPacketNumber = PacketNum;
         AckEvent.NumRetransmittableBytes = 6000;
-        AckEvent.NumTotalAckedRetransmittableBytes = (round + 1) * 6000;
+        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
         AckEvent.IsImplicit = FALSE;
         AckEvent.HasLoss = FALSE;
         AckEvent.MinRttValid = TRUE;
         AckEvent.MinRtt = 50000;
         AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-        AckEvent.AckedPackets = NULL;
+        AckEvent.AckedPackets = PacketArray[4];
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+        
+        for (int i = 0; i < 5; i++) {
+            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
+        }
     }
 
     // Should be in DRAIN now
     ASSERT_EQ(Bbr->BbrState, 1u); // BBR_STATE_DRAIN
 
-    // Now drain by ACKing all inflight bytes
+    // Now drain by ACKing remaining inflight bytes
     TimeNow += 50000;
-    PacketNum++;
+    
+    uint32_t RemainingBytes = Bbr->BytesInFlight;
+    if (RemainingBytes > 0) {
+        QUIC_ACK_EVENT DrainAck = {};
+        DrainAck.TimeNow = TimeNow;
+        DrainAck.AdjustedAckTime = TimeNow;
+        DrainAck.LargestAck = PacketNum + 1;
+        DrainAck.LargestSentPacketNumber = PacketNum + 1;
+        DrainAck.NumRetransmittableBytes = RemainingBytes;
+        DrainAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + RemainingBytes;
+        DrainAck.IsImplicit = FALSE;
+        DrainAck.HasLoss = FALSE;
+        DrainAck.MinRttValid = TRUE;
+        DrainAck.MinRtt = 50000;
+        DrainAck.IsLargestAckedPacketAppLimited = FALSE;
+        DrainAck.AckedPackets = NULL; // No packet metadata needed for drain
 
-    QUIC_ACK_EVENT DrainAck = {};
-    DrainAck.TimeNow = TimeNow;
-    DrainAck.LargestAck = PacketNum;
-    DrainAck.LargestSentPacketNumber = PacketNum;
-    DrainAck.NumRetransmittableBytes = Bbr->BytesInFlight; // ACK everything
-    DrainAck.NumTotalAckedRetransmittableBytes = DrainAck.NumRetransmittableBytes + 24000;
-    DrainAck.IsImplicit = FALSE;
-    DrainAck.HasLoss = FALSE;
-    DrainAck.MinRttValid = TRUE;
-    DrainAck.MinRtt = 50000;
-    DrainAck.IsLargestAckedPacketAppLimited = FALSE;
-    DrainAck.AckedPackets = NULL;
-
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
+    }
 
     // Should transition to PROBE_BW
     ASSERT_EQ(Bbr->BbrState, 2u); // BBR_STATE_PROBE_BW
@@ -557,7 +620,7 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
 
 //
 // Test 14: State transition to PROBE_RTT due to RTT expiration
-// Scenario: Simulate RTT sample expiration (10 seconds) to force PROBE_RTT.
+// Scenario: Simulate RTT sample expiration (10 seconds) to force PROBE_RTT from PROBE_BW.
 //
 TEST(BbrTest, StateTransitionToProbRtt)
 {
@@ -569,45 +632,90 @@ TEST(BbrTest, StateTransitionToProbRtt)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    uint64_t PacketNum = 1;
+    uint64_t TimeNow = 0;
+    uint64_t PacketNum = 0;
+    uint64_t TotalBytesSent = 0;
 
-    // Send and ACK to establish MinRTT
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-    
-    QUIC_ACK_EVENT InitialAck = {};
-    InitialAck.TimeNow = 100000; // 100ms
-    InitialAck.LargestAck = PacketNum++;
-    InitialAck.LargestSentPacketNumber = PacketNum;
-    InitialAck.NumRetransmittableBytes = 1200;
-    InitialAck.NumTotalAckedRetransmittableBytes = 1200;
-    InitialAck.IsImplicit = FALSE;
-    InitialAck.HasLoss = FALSE;
-    InitialAck.MinRttValid = TRUE;
-    InitialAck.MinRtt = 50000; // 50ms RTT
-    InitialAck.IsLargestAckedPacketAppLimited = FALSE;
-    InitialAck.AckedPackets = NULL;
+    // First get to PROBE_BW state
+    for (int round = 0; round < 4; round++) {
+        QUIC_SENT_PACKET_METADATA* PacketArray[5];
+        for (int i = 0; i < 5; i++) {
+            uint32_t PacketSize = 1200;
+            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+            
+            TotalBytesSent += PacketSize;
+            PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, TimeNow, TotalBytesSent);
+            ASSERT_NE(PacketArray[i], nullptr);
+            
+            if (i > 0) {
+                PacketArray[i]->Next = PacketArray[i-1];
+            }
+        }
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &InitialAck);
+        TimeNow += 50000;
+
+        QUIC_ACK_EVENT AckEvent = {};
+        AckEvent.TimeNow = TimeNow;
+        AckEvent.AdjustedAckTime = TimeNow;
+        AckEvent.LargestAck = PacketNum;
+        AckEvent.LargestSentPacketNumber = PacketNum;
+        AckEvent.NumRetransmittableBytes = 6000;
+        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.MinRtt = 50000;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+        AckEvent.AckedPackets = PacketArray[4];
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+        
+        for (int i = 0; i < 5; i++) {
+            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
+        }
+    }
+
+    // Drain to PROBE_BW
+    uint32_t RemainingBytes = Bbr->BytesInFlight;
+    if (RemainingBytes > 0) {
+        TimeNow += 50000;
+        QUIC_ACK_EVENT DrainAck = {};
+        DrainAck.TimeNow = TimeNow;
+        DrainAck.AdjustedAckTime = TimeNow;
+        DrainAck.LargestAck = PacketNum + 1;
+        DrainAck.LargestSentPacketNumber = PacketNum + 1;
+        DrainAck.NumRetransmittableBytes = RemainingBytes;
+        DrainAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + RemainingBytes;
+        DrainAck.IsImplicit = FALSE;
+        DrainAck.HasLoss = FALSE;
+        DrainAck.MinRttValid = TRUE;
+        DrainAck.MinRtt = 50000;
+        DrainAck.IsLargestAckedPacketAppLimited = FALSE;
+        DrainAck.AckedPackets = NULL;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
+    }
 
     ASSERT_TRUE(Bbr->BtlbwFound);
-    
-    // Initial state should be STARTUP or might already be in DRAIN/PROBE_BW depending on timing
-    // Just verify we're not already in PROBE_RTT
-    ASSERT_NE(Bbr->BbrState, (uint8_t)3);
+    ASSERT_NE(Bbr->BbrState, (uint8_t)3); // Not in PROBE_RTT yet
 
-    // Now wait 10+ seconds and send/ACK again
+    // Now wait 10+ seconds and send/ACK to trigger RTT expiration
+    TimeNow += 10100000; // > 10 seconds
+    PacketNum++;
+
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
 
     QUIC_ACK_EVENT ExpiredAck = {};
-    ExpiredAck.TimeNow = 10100000 + 100000; // > 10 seconds later
-    ExpiredAck.LargestAck = PacketNum++;
+    ExpiredAck.TimeNow = TimeNow;
+    ExpiredAck.AdjustedAckTime = TimeNow;
+    ExpiredAck.LargestAck = PacketNum;
     ExpiredAck.LargestSentPacketNumber = PacketNum;
     ExpiredAck.NumRetransmittableBytes = 1200;
-    ExpiredAck.NumTotalAckedRetransmittableBytes = 2400;
+    ExpiredAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + 1200;
     ExpiredAck.IsImplicit = FALSE;
     ExpiredAck.HasLoss = FALSE;
     ExpiredAck.MinRttValid = TRUE;
-    ExpiredAck.MinRtt = 50000; // Same RTT
+    ExpiredAck.MinRtt = 50000;
     ExpiredAck.IsLargestAckedPacketAppLimited = FALSE;
     ExpiredAck.AckedPackets = NULL;
 
@@ -632,51 +740,67 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
     uint64_t TimeNow = 100000;
-    uint64_t PacketNum = 1;
+    uint64_t PacketNum = 0;
+    uint64_t TotalBytesSent = 0;
 
-    // Get to PROBE_BW first (simplified - directly set state for this specific test)
-    // This is acceptable as we're testing PROBE_RTT exit, not entry
-    
-    // First establish MinRTT and get BtlbwFound
+    // Get to PROBE_BW state first
     for (int round = 0; round < 4; round++) {
+        QUIC_SENT_PACKET_METADATA* PacketArray[3];
         for (int i = 0; i < 3; i++) {
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-            PacketNum++;
+            uint32_t PacketSize = 1200;
+            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+            
+            TotalBytesSent += PacketSize;
+            PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, TimeNow, TotalBytesSent);
+            ASSERT_NE(PacketArray[i], nullptr);
+            
+            if (i > 0) {
+                PacketArray[i]->Next = PacketArray[i-1];
+            }
         }
         TimeNow += 50000;
 
         QUIC_ACK_EVENT AckEvent = {};
         AckEvent.TimeNow = TimeNow;
+        AckEvent.AdjustedAckTime = TimeNow;
         AckEvent.LargestAck = PacketNum;
         AckEvent.LargestSentPacketNumber = PacketNum;
         AckEvent.NumRetransmittableBytes = 3600;
-        AckEvent.NumTotalAckedRetransmittableBytes = (round + 1) * 3600;
+        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
         AckEvent.IsImplicit = FALSE;
         AckEvent.HasLoss = FALSE;
         AckEvent.MinRttValid = TRUE;
         AckEvent.MinRtt = 50000;
         AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-        AckEvent.AckedPackets = NULL;
+        AckEvent.AckedPackets = PacketArray[2];
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+        
+        for (int i = 0; i < 3; i++) {
+            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
+        }
     }
 
     // Drain to get to PROBE_BW
     TimeNow += 50000;
-    QUIC_ACK_EVENT DrainAck = {};
-    DrainAck.TimeNow = TimeNow;
-    DrainAck.LargestAck = PacketNum + 1;
-    DrainAck.LargestSentPacketNumber = PacketNum + 1;
-    DrainAck.NumRetransmittableBytes = Bbr->BytesInFlight;
-    DrainAck.NumTotalAckedRetransmittableBytes = 5 * 3600;
-    DrainAck.IsImplicit = FALSE;
-    DrainAck.HasLoss = FALSE;
-    DrainAck.MinRttValid = TRUE;
-    DrainAck.MinRtt = 50000;
-    DrainAck.IsLargestAckedPacketAppLimited = FALSE;
-    DrainAck.AckedPackets = NULL;
+    uint32_t RemainingBytes = Bbr->BytesInFlight;
+    if (RemainingBytes > 0) {
+        QUIC_ACK_EVENT DrainAck = {};
+        DrainAck.TimeNow = TimeNow;
+        DrainAck.AdjustedAckTime = TimeNow;
+        DrainAck.LargestAck = PacketNum + 1;
+        DrainAck.LargestSentPacketNumber = PacketNum + 1;
+        DrainAck.NumRetransmittableBytes = RemainingBytes;
+        DrainAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + RemainingBytes;
+        DrainAck.IsImplicit = FALSE;
+        DrainAck.HasLoss = FALSE;
+        DrainAck.MinRttValid = TRUE;
+        DrainAck.MinRtt = 50000;
+        DrainAck.IsLargestAckedPacketAppLimited = FALSE;
+        DrainAck.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
+    }
 
     ASSERT_EQ(Bbr->BbrState, 2u); // PROBE_BW
     ASSERT_TRUE(Bbr->BtlbwFound);
@@ -689,10 +813,11 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
 
     QUIC_ACK_EVENT ExpireAck = {};
     ExpireAck.TimeNow = TimeNow;
+    ExpireAck.AdjustedAckTime = TimeNow;
     ExpireAck.LargestAck = PacketNum;
     ExpireAck.LargestSentPacketNumber = PacketNum;
     ExpireAck.NumRetransmittableBytes = 1200;
-    ExpireAck.NumTotalAckedRetransmittableBytes = 6 * 3600;
+    ExpireAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + 1200;
     ExpireAck.IsImplicit = FALSE;
     ExpireAck.HasLoss = FALSE;
     ExpireAck.MinRttValid = TRUE;
@@ -711,10 +836,11 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
     // Keep flight low (already drained)
     QUIC_ACK_EVENT ProbeAck1 = {};
     ProbeAck1.TimeNow = TimeNow;
+    ProbeAck1.AdjustedAckTime = TimeNow;
     ProbeAck1.LargestAck = PacketNum;
     ProbeAck1.LargestSentPacketNumber = PacketNum;
     ProbeAck1.NumRetransmittableBytes = 0;
-    ProbeAck1.NumTotalAckedRetransmittableBytes = 6 * 3600;
+    ProbeAck1.NumTotalAckedRetransmittableBytes = TotalBytesSent + 1200;
     ProbeAck1.IsImplicit = FALSE;
     ProbeAck1.HasLoss = FALSE;
     ProbeAck1.MinRttValid = TRUE;
