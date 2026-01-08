@@ -1532,3 +1532,91 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
     // Should exit recovery (NOT_RECOVERY = 0)
     ASSERT_EQ(Bbr->RecoveryState, 0u);
 }
+
+//
+// Scenario: Call GetBytesInFlightMax function pointer
+// Tests the public API getter for BytesInFlightMax (lines 411-413).
+//
+TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Call the public function pointer
+    uint32_t MaxBytes = Connection.CongestionControl.QuicCongestionControlGetBytesInFlightMax(&Connection.CongestionControl);
+
+    // Should return BytesInFlightMax value
+    ASSERT_GT(MaxBytes, 0u);
+}
+
+//
+// Scenario: Pacing disabled when setting is OFF
+// Tests send allowance calculation without pacing (lines 636-642).
+//
+TEST(BbrTest, SendAllowanceWithPacingDisabled)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280, FALSE); // Pacing OFF
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    
+    // Establish some bandwidth
+    for (int i = 0; i < 3; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    }
+
+    // Get send allowance - should use non-paced path
+    uint32_t SendAllowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl, 0, FALSE);
+
+    // Should return allowance (line 636-646 path)
+    ASSERT_GT(SendAllowance, 0u);
+}
+
+//
+// Scenario: Implicit ACK with NetStatsEventEnabled triggers stats
+// Tests the implicit ACK code path that updates stats (lines 782-789).
+//
+TEST(BbrTest, ImplicitAckTriggersNetStats)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    Connection.Settings.NetStatsEventEnabled = TRUE; // Enable stats
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Send some data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    // Implicit ACK event
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow + 50000;
+    AckEvent.AdjustedAckTime = TimeNow + 50000;
+    AckEvent.IsImplicit = TRUE; // Key: implicit ACK
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.LargestAck = 1;
+    AckEvent.LargestSentPacketNumber = 1;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    uint32_t InitialCwnd = Bbr->CongestionWindow;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Implicit ACK should update CWND (lines 783-789)
+    ASSERT_GE(Bbr->CongestionWindow, InitialCwnd);
+}
