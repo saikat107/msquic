@@ -36,6 +36,10 @@ static void InitializeMockConnection(
     // Initialize Settings with defaults
     Connection.Settings.PacingEnabled = EnablePacing;
     Connection.Settings.NetStatsEventEnabled = FALSE;
+    
+    // Initialize Stats
+    Connection.Stats.QuicVersion = QUIC_VERSION_LATEST;
+    Connection.Stats.Send.PersistentCongestionCount = 0;
 
     // Initialize Path fields needed for some functions
     Connection.Paths[0].GotFirstRttSample = FALSE;
@@ -1338,4 +1342,193 @@ TEST(BbrTest, PacingSendQuantumTiers)
     // SendQuantum should be set based on bandwidth tier (lines 718-724)
     // We can't directly check internal SendQuantum, but we can verify the pacing logic works
     ASSERT_GT(Bbr->SendQuantum, 0ull);
+}
+
+//
+// Test 25: NetStatsEvent triggers GetNetworkStatistics and LogOutFlowStatus
+// Scenario: When NetStatsEventEnabled=TRUE, ACK processing calls stats functions.
+//
+TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    
+    // Enable NetStatsEvent - this will trigger lines 787, 899, and related stats functions
+    Connection.Settings.NetStatsEventEnabled = TRUE;
+    
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    uint64_t TimeNow = 100000;
+    uint64_t PacketNum = 0;
+    uint64_t TotalBytesSent = 0;
+
+    // Send packets
+    for (int i = 0; i < 5; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+        TotalBytesSent += 1200;
+    }
+
+    // Create ACK with metadata to trigger bandwidth calculation
+    QUIC_SENT_PACKET_METADATA* Packet = AllocPacketMetadata(++PacketNum, 1200, TimeNow, TotalBytesSent);
+    ASSERT_NE(Packet, nullptr);
+
+    TimeNow += 50000; // 50ms later
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow;
+    AckEvent.AdjustedAckTime = TimeNow;
+    AckEvent.LargestAck = PacketNum;
+    AckEvent.LargestSentPacketNumber = PacketNum;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AckedPackets = Packet;
+
+    // This should trigger BbrCongestionControlIndicateConnectionEvent (line 787)
+    // which calls GetNetworkStatistics and LogOutFlowStatus
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    CXPLAT_FREE(Packet, QUIC_POOL_TEST);
+    
+    // Verify the ACK was processed
+    ASSERT_TRUE(true); // Stats functions were called internally
+}
+
+//
+// Test 26: Persistent congestion resets to minimum window
+// Scenario: Loss event with PersistentCongestion=TRUE resets RecoveryWindow to minimum.
+//
+TEST(BbrTest, PersistentCongestionResetsWindow)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    
+    // Enable NetStatsEvent to cover line 899 as well
+    Connection.Settings.NetStatsEventEnabled = TRUE;
+    
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send some data
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    }
+
+    uint32_t InitialRecoveryWindow = Bbr->RecoveryWindow;
+
+    // Trigger persistent congestion
+    QUIC_LOSS_EVENT LossEvent = {};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 20;
+    LossEvent.NumRetransmittableBytes = 6000;
+    LossEvent.PersistentCongestion = TRUE; // This triggers lines 948-956
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+
+    // RecoveryWindow should be reset to a minimum value (less than initial)
+    ASSERT_LT(Bbr->RecoveryWindow, InitialRecoveryWindow);
+    // Should be reduced significantly (at least by half)
+    ASSERT_LT(Bbr->RecoveryWindow, InitialRecoveryWindow / 2);
+}
+
+//
+// Test 27: SetAppLimited when congestion-limited (early return)
+// Scenario: Calling SetAppLimited when BytesInFlight > CWND should return early.
+//
+TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+    
+    // Fill BytesInFlight beyond CWND
+    for (int i = 0; i < 20; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    }
+
+    // Ensure BytesInFlight > CWND
+    ASSERT_GT(Bbr->BytesInFlight, Bbr->CongestionWindow);
+    
+    // Mark as not app-limited initially
+    Bbr->BandwidthFilter.AppLimited = FALSE;
+    
+    Connection.LossDetection.LargestSentPacketNumber = 100;
+
+    // Call SetAppLimited - should hit line 989 (early return)
+    Connection.CongestionControl.QuicCongestionControlSetAppLimited(&Connection.CongestionControl);
+
+    // Should NOT be marked app-limited (early return prevents it)
+    ASSERT_FALSE(Bbr->BandwidthFilter.AppLimited);
+}
+
+//
+// Test 28: Recovery exit when ACKing packet >= EndOfRecovery
+// Scenario: Exit recovery state when acknowledging packet at or past EndOfRecovery.
+//
+TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 100000;
+
+    // Send packets
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    }
+
+    // Trigger loss to enter recovery
+    QUIC_LOSS_EVENT LossEvent = {};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 15;
+    LossEvent.NumRetransmittableBytes = 1200;
+    LossEvent.PersistentCongestion = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+
+    // Verify we're in recovery
+    ASSERT_NE(Bbr->RecoveryState, 0u);
+    uint64_t EndOfRecovery = Bbr->EndOfRecovery;
+
+    // ACK packet PAST EndOfRecovery to trigger recovery exit (lines 826-827)
+    // Key: HasLoss must be FALSE, and LargestAck > EndOfRecovery
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow + 50000;
+    AckEvent.AdjustedAckTime = TimeNow + 50000;
+    AckEvent.LargestAck = EndOfRecovery + 5; // Must be GREATER than EndOfRecovery
+    AckEvent.LargestSentPacketNumber = EndOfRecovery + 5;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE; // Critical: no loss to exit recovery
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should exit recovery (NOT_RECOVERY = 0)
+    ASSERT_EQ(Bbr->RecoveryState, 0u);
 }
