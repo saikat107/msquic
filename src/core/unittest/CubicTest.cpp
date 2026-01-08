@@ -497,6 +497,14 @@ TEST(CubicTest, OnDataSent_IncrementsBytesInFlight)
     Connection.CongestionControl.QuicCongestionControlOnDataSent(
         &Connection.CongestionControl, 1500);
     ASSERT_EQ(Cubic->Exemptions, 4u);
+    
+    // Test LastSendAllowance decrement (line 390)
+    // When NumRetransmittableBytes <= LastSendAllowance, allowance is reduced
+    Cubic->LastSendAllowance = 2000; // Set initial allowance
+    uint32_t SmallSend = 500; // Send less than allowance
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, SmallSend);
+    ASSERT_EQ(Cubic->LastSendAllowance, 2000u - SmallSend); // Should be reduced
 }
 
 //
@@ -545,7 +553,7 @@ TEST(CubicTest, OnDataAcknowledged_BasicAck)
     Connection.Settings.HyStartEnabled = TRUE;  // Must set on Connection for runtime checks
     Connection.Paths[0].GotFirstRttSample = TRUE;
     Connection.Paths[0].SmoothedRtt = 50000; // 50ms in microseconds
-
+    Connection.Settings.NetStatsEventEnabled = TRUE; // Enable logging
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
@@ -1131,6 +1139,19 @@ TEST(CubicTest, Pacing_SlowStartWindowEstimation)
 
     // Should get some allowance based on slow start estimation (2x window)
     ASSERT_GT(Allowance, 0u);
+    
+    // Now test the case where estimated window (2x current) exceeds threshold
+    // Set threshold to be between current window and 2x current window
+    uint32_t CurrentWindow = Cubic->CongestionWindow;
+    Cubic->SlowStartThreshold = CurrentWindow + (CurrentWindow / 2); // 1.5x current window
+    
+    // Call GetSendAllowance again - this should trigger line 225
+    // where EstimatedWnd (2x) gets clamped to SlowStartThreshold
+    uint32_t Allowance2 = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl, 10000, TRUE);
+    
+    // Should still get some allowance, but clamped calculation
+    ASSERT_GT(Allowance2, 0u);
 }
 
 //
@@ -3030,6 +3051,75 @@ TEST(CubicTest, CongestionAvoidance_TimeGapOverflowProtection)
 }
 
 //
+// Test: Cubic Window Calculation Overflow Protection
+// Scenario: Tests the overflow handling in cubic window calculation.
+// When WindowMax is extremely large, the cubic formula can overflow, 
+// causing CubicWindow to become negative. Line 630 handles this by clamping
+// to 2 * BytesInFlightMax.
+//
+TEST(CubicTest, CongestionAvoidance_CubicWindowOverflow)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    Connection.Paths[0].GotFirstRttSample = TRUE;
+    Connection.Paths[0].SmoothedRtt = 50000;
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Force into congestion avoidance
+    Cubic->SlowStartThreshold = 10000;
+    Cubic->CongestionWindow = 20000;
+    
+    // Set WindowMax to maximum value - when combined with large DeltaT in cubic 
+    // calculation, this will cause int64 overflow
+    // The formula: CubicWindow = (((DeltaT^3) * MTU * C) >> 20) + WindowMax
+    Cubic->WindowMax = UINT32_MAX; // Maximum possible value
+    Cubic->BytesInFlightMax = 50000; // Set a reasonable max
+    
+    // Set up time to have been in congestion avoidance for a very long time
+    // to maximize DeltaT in the cubic calculation
+    uint64_t TimeNowUs = 30000000000ULL; // 30000 seconds (8+ hours)
+    Cubic->TimeOfCongAvoidStart = 1000000; // Started very long ago
+    Cubic->KCubic = 0; // K = 0 to maximize DeltaT
+    Cubic->TimeOfLastAckValid = TRUE;
+    Cubic->TimeOfLastAck = TimeNowUs - 100000; // Recent ACK
+
+    // Send data
+    uint32_t BytesToSend = 1200;
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToSend);
+
+    QUIC_ACK_EVENT AckEvent;
+    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
+    AckEvent.TimeNow = TimeNowUs;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 15;
+    AckEvent.NumRetransmittableBytes = BytesToSend;
+    AckEvent.NumTotalAckedRetransmittableBytes = BytesToSend;
+    AckEvent.SmoothedRtt = 50000;
+    AckEvent.MinRtt = 45000;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl,
+        &AckEvent);
+
+    // Window should be valid (overflow was handled)
+    ASSERT_GT(Cubic->CongestionWindow, 0u);
+    ASSERT_LT(Cubic->CongestionWindow, UINT32_MAX);
+}
+
+//
 // Test: Slow Start Window Overflow After Persistent Congestion
 // Scenario: After persistent congestion, window is reset to 2*MTU while threshold
 // remains at a higher value, creating window < threshold condition. A large ACK
@@ -3141,59 +3231,3 @@ TEST(CubicTest, SlowStart_WindowOverflowAfterPersistentCongestion)
     // 2. Window should be clamped to threshold
     ASSERT_EQ(Cubic->CongestionWindow, ThresholdAfterPC);
 }
-
-//
-// Test: Network Statistics Event
-// Scenario: Verifies that network statistics events are fired when NetStatsEventEnabled
-// is set to TRUE. This tests lines 692-713 in cubic.c.
-//
-TEST(CubicTest, NetworkStatisticsEvent)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    Settings.SendIdleTimeoutMs = 1000;
-
-    InitializeMockConnection(Connection, 1280);
-    Connection.Paths[0].GotFirstRttSample = TRUE;
-    Connection.Paths[0].SmoothedRtt = 50000;
-    
-    // Enable network statistics events
-    Connection.Settings.NetStatsEventEnabled = TRUE;
-
-    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
-
-    // Send some data
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-
-    // Create an ACK event - this will trigger the network statistics event
-    QUIC_ACK_EVENT AckEvent;
-    CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
-    AckEvent.TimeNow = 1000000;
-    AckEvent.LargestAck = 1;
-    AckEvent.LargestSentPacketNumber = 2;
-    AckEvent.NumRetransmittableBytes = 1200;
-    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent.SmoothedRtt = 50000;
-    AckEvent.MinRtt = 45000;
-    AckEvent.MinRttValid = FALSE;
-    AckEvent.IsImplicit = FALSE;
-    AckEvent.HasLoss = FALSE;
-    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
-    AckEvent.AckedPackets = NULL;
-
-    // This call will execute lines 692-713 when NetStatsEventEnabled is TRUE
-    BOOLEAN Result = Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
-        &Connection.CongestionControl,
-        &AckEvent);
-
-    // Verify that OnDataAcknowledged succeeded
-    // Note: We can't directly verify the event was fired in unit tests, but the lines
-    // will be executed and the code path exercised
-    ASSERT_TRUE(Result || !Result); // Dummy assertion to ensure test runs
-}
-
-
