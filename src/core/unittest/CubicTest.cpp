@@ -3029,4 +3029,120 @@ TEST(CubicTest, CongestionAvoidance_TimeGapOverflowProtection)
     ASSERT_EQ(Cubic->TimeOfCongAvoidStart, TimeNowUs);
 }
 
+//
+// Test: Slow Start Window Overflow After Persistent Congestion
+// Scenario: After persistent congestion, window is reset to 2*MTU while threshold
+// remains at a higher value, creating window < threshold condition. A large ACK
+// can then trigger the overflow logic where window grows beyond threshold.
+//
+TEST(CubicTest, SlowStart_WindowOverflowAfterPersistentCongestion)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    Connection.Paths[0].GotFirstRttSample = TRUE;
+    Connection.Paths[0].SmoothedRtt = 50000;
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    uint32_t InitialWindow = Cubic->CongestionWindow;
+    
+    // Trigger PERSISTENT congestion directly (window will be reduced to 2*MTU)
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    
+    QUIC_LOSS_EVENT PersistentLoss;
+    CxPlatZeroMemory(&PersistentLoss, sizeof(PersistentLoss));
+    PersistentLoss.NumRetransmittableBytes = 1200;
+    PersistentLoss.PersistentCongestion = TRUE; // This is the key!
+    PersistentLoss.LargestPacketNumberLost = 20;
+    PersistentLoss.LargestSentPacketNumber = 25;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(
+        &Connection.CongestionControl,
+        &PersistentLoss);
+    
+    // After persistent congestion:
+    // - Window is reset to 2 * MTU (approximately 2560, but may vary)
+    // - Threshold is set to old_window * 0.7
+    uint32_t WindowAfterPC = Cubic->CongestionWindow;
+    uint32_t ThresholdAfterPC = Cubic->SlowStartThreshold;
+    
+    ASSERT_LT(WindowAfterPC, 3000u); // Should be around 2*MTU
+    ASSERT_GT(WindowAfterPC, 2000u);
+    ASSERT_EQ(ThresholdAfterPC, InitialWindow * 7 / 10); // 70% of initial window
+    ASSERT_LT(WindowAfterPC, ThresholdAfterPC); // NOW window < threshold!
+    
+    // We're in recovery after persistent congestion. Need to exit recovery first.
+    // Exit recovery by ACKing a packet sent after the recovery started
+    Connection.Send.NextPacketNumber = 30;
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    
+    QUIC_ACK_EVENT RecoveryExitAck;
+    CxPlatZeroMemory(&RecoveryExitAck, sizeof(RecoveryExitAck));
+    RecoveryExitAck.TimeNow = 1100000;
+    RecoveryExitAck.LargestAck = 30;
+    RecoveryExitAck.LargestSentPacketNumber = 31;
+    RecoveryExitAck.NumRetransmittableBytes = 1200;
+    RecoveryExitAck.NumTotalAckedRetransmittableBytes = 1200;
+    RecoveryExitAck.SmoothedRtt = 50000;
+    RecoveryExitAck.MinRtt = 45000;
+    RecoveryExitAck.MinRttValid = FALSE;
+    RecoveryExitAck.IsImplicit = FALSE;
+    RecoveryExitAck.HasLoss = FALSE;
+    RecoveryExitAck.IsLargestAckedPacketAppLimited = FALSE;
+    RecoveryExitAck.AdjustedAckTime = RecoveryExitAck.TimeNow;
+    RecoveryExitAck.AckedPackets = NULL;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl,
+        &RecoveryExitAck);
+    
+    ASSERT_FALSE(Cubic->IsInRecovery); // Exited recovery
+    ASSERT_LT(Cubic->CongestionWindow, Cubic->SlowStartThreshold); // Still in slow start
+    
+    // Now send and ACK enough bytes to exceed threshold
+    // In slow start, window grows by BytesAcked
+    uint32_t BytesToExceedThreshold = ThresholdAfterPC - WindowAfterPC + 1000;
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesToExceedThreshold);
+    
+    QUIC_ACK_EVENT LargeAck;
+    CxPlatZeroMemory(&LargeAck, sizeof(LargeAck));
+    LargeAck.TimeNow = 1200000;
+    LargeAck.LargestAck = 30;
+    LargeAck.LargestSentPacketNumber = 35;
+    LargeAck.NumRetransmittableBytes = BytesToExceedThreshold;
+    LargeAck.NumTotalAckedRetransmittableBytes = BytesToExceedThreshold;
+    LargeAck.SmoothedRtt = 50000;
+    LargeAck.MinRtt = 45000;
+    LargeAck.MinRttValid = FALSE;
+    LargeAck.IsImplicit = FALSE;
+    LargeAck.HasLoss = FALSE;
+    LargeAck.IsLargestAckedPacketAppLimited = FALSE;
+    LargeAck.AdjustedAckTime = LargeAck.TimeNow;
+    LargeAck.AckedPackets = NULL;
+    
+    // Before ACK: verify we're in slow start
+    ASSERT_LT(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl,
+        &LargeAck);
+    
+    // After ACK: verify overflow logic executed (lines 550-559)
+    // 1. TimeOfCongAvoidStart should be set
+    ASSERT_EQ(Cubic->TimeOfCongAvoidStart, LargeAck.TimeNow);
+    
+    // 2. Window should be clamped to threshold
+    ASSERT_EQ(Cubic->CongestionWindow, ThresholdAfterPC);
+    
+    // 3. The excess bytes should have been processed in congestion avoidance
+    // (we can't directly verify BytesAcked value, but the clamping confirms the logic ran)
+}
+
 
