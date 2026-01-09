@@ -722,7 +722,7 @@ TEST(BbrTest, GetSendAllowanceWithPacing)
 
 //
 // ============================================================================
-// CATEGORY 7: NETWORK STATISTICS AND MONITORING TESTS
+// CATEGORY 6: NETWORK STATISTICS AND MONITORING TESTS
 // ============================================================================
 //
 
@@ -890,7 +890,7 @@ TEST(BbrTest, RecoveryWindowUpdateOnAck)
 
 //
 // ============================================================================
-// CATEGORY 8: APP-LIMITED DETECTION TESTS
+// CATEGORY 7: APP-LIMITED DETECTION TESTS
 // ============================================================================
 //
 
@@ -938,7 +938,7 @@ TEST(BbrTest, SetAppLimitedSuccess)
 
 //
 // ============================================================================
-// CATEGORY 7: EDGE CASES AND ERROR HANDLING TESTS
+// CATEGORY 8: EDGE CASES AND ERROR HANDLING TESTS
 // ============================================================================
 //
 
@@ -1297,7 +1297,7 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 
 //
 // ============================================================================
-// CATEGORY 6: PUBLIC API COVERAGE TESTS
+// CATEGORY 9: PUBLIC API COVERAGE TESTS
 // ============================================================================
 //
 
