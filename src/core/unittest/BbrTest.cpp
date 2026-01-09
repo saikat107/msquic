@@ -457,7 +457,7 @@ TEST(BbrTest, ResetPartialPreservesInflight)
 // Test 8: CanSend respects congestion window
 //
 // What: Tests BbrCongestionControlCanSend enforces congestion window limits.
-// How: 
+// How:
 //      Scenario 1: BytesInFlight < CWND → CanSend returns TRUE
 //      Scenario 2: Fill window via OnDataSent → CanSend returns FALSE
 // Asserts:
@@ -847,7 +847,7 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
 // Test 14: State transition to PROBE_RTT due to RTT expiration
 //
 // What: Tests BBR's transition from PROBE_BW (2) to PROBE_RTT (3) when RTT sample ages beyond 10 seconds.
-// How: 
+// How:
 //      1. Establishes PROBE_BW state through bandwidth discovery (send/ACK over multiple rounds)
 //      2. Waits >10 seconds (RTT expiration threshold: QUIC_BBR_RTPROP_FILTER_LEN_US = 10,000,000 us)
 //      3. Sends/ACKs new packet to trigger RTT expiration check
@@ -1480,7 +1480,7 @@ TEST(BbrTest, SetAppLimitedSuccess)
 //
 // What: Tests that BBR handles ACKs for zero-length packets correctly (skips bandwidth calc).
 // How: Creates packet metadata with PacketLength=0, includes it in ACK event,
-//      calls OnDataAcknowledged, and verifies no crash (line 132 skips zero-length packets).
+//      calls OnDataAcknowledged, and verifies no crash.
 // Asserts:
 //   - No crash processing zero-length packet
 //   - ACK processed successfully
@@ -1516,7 +1516,7 @@ TEST(BbrTest, ZeroLengthPacketSkippedInBandwidthUpdate)
     AckEvent.IsLargestAckedPacketAppLimited = FALSE;
     AckEvent.AckedPackets = Packet;
 
-    // Should process without crash (line 132 skips zero-length)
+    // Should process without crash
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
     CXPLAT_FREE(Packet, QUIC_POOL_TEST);
@@ -1525,7 +1525,7 @@ TEST(BbrTest, ZeroLengthPacketSkippedInBandwidthUpdate)
 //
 // Test 24: Pacing with high bandwidth for send quantum tiers
 //
-// What: Tests that BBR's SendQuantum is set correctly based on bandwidth tiers (lines 718-724).
+// What: Tests that BBR's SendQuantum is set correctly based on bandwidth tiers.
 // How: Sends 10 packets over 5 rounds with 0.5ms spacing (simulates high bandwidth ~12 Mbps),
 //      10ms RTT, processes ACKs with packet metadata to establish bandwidth,
 //      and verifies SendQuantum is calculated and set (> 0).
@@ -1608,7 +1608,7 @@ TEST(BbrTest, PacingSendQuantumTiers)
         }
     }
 
-    // SendQuantum should be set based on bandwidth tier (lines 718-724)
+    // SendQuantum should be set based on bandwidth tier
     // We can't directly check internal SendQuantum, but we can verify the pacing logic works
     ASSERT_GT(Bbr->SendQuantum, 0ull);
 }
@@ -1617,7 +1617,7 @@ TEST(BbrTest, PacingSendQuantumTiers)
 // Test 25: NetStatsEvent triggers GetNetworkStatistics and LogOutFlowStatus
 //
 // What: Tests that ACK processing with NetStatsEventEnabled=TRUE triggers:
-//       - BbrCongestionControlGetNetworkStatistics (line 787 via IndicateConnectionEvent)
+//       - BbrCongestionControlGetNetworkStatistics
 //       - BbrCongestionControlLogOutFlowStatus (via QuicCongestionControlLogOutFlowStatus)
 // How: Sets NetStatsEventEnabled=TRUE, sends 5 packets, creates ACK with metadata,
 //      processes ACK via OnDataAcknowledged, which internally calls stats functions.
@@ -1632,7 +1632,7 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
     Settings.InitialWindowPackets = 10;
     InitializeMockConnection(Connection, 1280);
 
-    // Enable NetStatsEvent - this will trigger lines 787, 899, and related stats functions
+    // Enable NetStatsEvent
     Connection.Settings.NetStatsEventEnabled = TRUE;
 
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
@@ -1667,7 +1667,7 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
     AckEvent.IsLargestAckedPacketAppLimited = FALSE;
     AckEvent.AckedPackets = Packet;
 
-    // This should trigger BbrCongestionControlIndicateConnectionEvent (line 787)
+    // This should trigger BbrCongestionControlIndicateConnectionEvent
     // which calls GetNetworkStatistics and LogOutFlowStatus
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
@@ -1680,8 +1680,8 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
 //
 // Test 26: Persistent congestion resets to minimum window
 //
-// What: Tests that OnDataLost with PersistentCongestion=TRUE resets RecoveryWindow (lines 948-956).
-// How: Sets NetStatsEventEnabled=TRUE (to cover line 899), sends 10 packets,
+// What: Tests that OnDataLost with PersistentCongestion=TRUE resets RecoveryWindow.
+// How: Sets NetStatsEventEnabled=TRUE sends 10 packets,
 //      triggers loss with PersistentCongestion=TRUE, and verifies:
 //      - RecoveryWindow reduced significantly (< 50% of initial)
 // Asserts:
@@ -1696,7 +1696,6 @@ TEST(BbrTest, PersistentCongestionResetsWindow)
     Settings.InitialWindowPackets = 10;
     InitializeMockConnection(Connection, 1280);
 
-    // Enable NetStatsEvent to cover line 899 as well
     Connection.Settings.NetStatsEventEnabled = TRUE;
 
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
@@ -1715,7 +1714,7 @@ TEST(BbrTest, PersistentCongestionResetsWindow)
     LossEvent.LargestPacketNumberLost = 5;
     LossEvent.LargestSentPacketNumber = 20;
     LossEvent.NumRetransmittableBytes = 6000;
-    LossEvent.PersistentCongestion = TRUE; // This triggers lines 948-956
+    LossEvent.PersistentCongestion = TRUE;
 
     Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
 
@@ -1728,7 +1727,7 @@ TEST(BbrTest, PersistentCongestionResetsWindow)
 //
 // Test 27: SetAppLimited when congestion-limited (early return)
 //
-// What: Tests that SetAppLimited returns early when BytesInFlight > CongestionWindow (line 989).
+// What: Tests that SetAppLimited returns early when BytesInFlight > CongestionWindow.
 // How: Fills BytesInFlight to exceed CWND (20 x 1200 bytes), ensures AppLimited=FALSE,
 //      calls SetAppLimited, and verifies it returns early without setting AppLimited flag.
 // Asserts:
@@ -1759,7 +1758,7 @@ TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
 
     Connection.LossDetection.LargestSentPacketNumber = 100;
 
-    // Call SetAppLimited - should hit line 989 (early return)
+    // Call SetAppLimited - should hit early return
     Connection.CongestionControl.QuicCongestionControlSetAppLimited(&Connection.CongestionControl);
 
     // Should NOT be marked app-limited (early return prevents it)
@@ -1769,7 +1768,7 @@ TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
 //
 // Test 28: Recovery exit when ACKing packet >= EndOfRecovery
 //
-// What: Tests BBR exits recovery when ACKing packet number >= EndOfRecovery (lines 826-827).
+// What: Tests BBR exits recovery when ACKing packet number >= EndOfRecovery.
 // How: Sends 10 packets, triggers loss to enter recovery (captures EndOfRecovery value),
 //      then ACKs packet with LargestAck > EndOfRecovery and HasLoss=FALSE,
 //      and verifies RecoveryState returns to NOT_RECOVERY (0).
@@ -1807,7 +1806,7 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
     ASSERT_NE(Bbr->RecoveryState, 0u);
     uint64_t EndOfRecovery = Bbr->EndOfRecovery;
 
-    // ACK packet PAST EndOfRecovery to trigger recovery exit (lines 826-827)
+    // ACK packet PAST EndOfRecovery to trigger recovery exit
     // Key: HasLoss must be FALSE, and LargestAck > EndOfRecovery
     QUIC_ACK_EVENT AckEvent = {};
     AckEvent.TimeNow = TimeNow + 50000;
@@ -1838,7 +1837,7 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 //
 // Test 29: Call GetBytesInFlightMax function pointer
 //
-// What: Tests BbrCongestionControlGetBytesInFlightMax public API (lines 411-413).
+// What: Tests BbrCongestionControlGetBytesInFlightMax public API.
 // How: Initializes BBR, calls GetBytesInFlightMax via function pointer,
 //      verifies it returns a positive value representing max inflight bytes observed.
 // Asserts:
@@ -1862,7 +1861,7 @@ TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
 //
 // Test 30: Pacing disabled when setting is OFF
 //
-// What: Tests GetSendAllowance takes non-paced code path when pacing disabled (lines 636-646).
+// What: Tests GetSendAllowance takes non-paced code path when pacing disabled.
 // How: Initializes BBR with PacingEnabled=FALSE, sends 3 packets (3600 bytes),
 //      calls GetSendAllowance(0, FALSE), and verifies positive allowance returned
 //      (uses non-paced calculation path).
@@ -1888,17 +1887,17 @@ TEST(BbrTest, SendAllowanceWithPacingDisabled)
     uint32_t SendAllowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
         &Connection.CongestionControl, 0, FALSE);
 
-    // Should return allowance (line 636-646 path)
+    // Should return allowance via non-paced calculation
     ASSERT_GT(SendAllowance, 0u);
 }
 
 //
 // Test 31: Implicit ACK with NetStatsEventEnabled triggers stats
 //
-// What: Tests that implicit ACKs with NetStatsEventEnabled=TRUE trigger stats updates (lines 783-789).
+// What: Tests that implicit ACKs with NetStatsEventEnabled=TRUE trigger stats updates.
 // How: Sets NetStatsEventEnabled=TRUE, sends 1200 bytes, creates ACK with IsImplicit=TRUE,
 //      processes ACK via OnDataAcknowledged, and verifies:
-//      - CWND updated for implicit ACK (lines 783-789)
+//      - CWND updated for implicit ACK
 //      - No crash, state remains valid
 // Asserts:
 //   - CongestionWindow >= InitialCwnd (updated via implicit ACK path)
@@ -1937,18 +1936,18 @@ TEST(BbrTest, ImplicitAckTriggersNetStats)
 
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
-    // Implicit ACK should update CWND (lines 783-789)
+    // Implicit ACK should update CWND
     ASSERT_GE(Bbr->CongestionWindow, InitialCwnd);
 }
 
 //
 // Test 32: Backwards timestamp and zero elapsed time in bandwidth calculation
 //
-// What: Tests BBR handles clock anomalies gracefully in bandwidth calculation (lines 365-368, 580-586).
+// What: Tests BBR handles clock anomalies gracefully in bandwidth calculation.
 // How: Sends packets and ACKs with problematic timestamps:
 //      Step 1: Normal ACK to establish baseline
-//      Step 2: ACK with same timestamp (zero elapsed time) - tests line 365-368
-//      Step 3: ACK with backwards timestamp - tests line 580-586 with negative diff
+//      Step 2: ACK with same timestamp (zero elapsed time)
+//      Step 3: ACK with backwards timestamp
 //      Verifies BBR doesn't crash and maintains valid state after each scenario.
 // Asserts:
 //   - No crash on zero elapsed time
@@ -2002,7 +2001,7 @@ TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
     AckEvent.LargestAck = 2;
     AckEvent.LargestSentPacketNumber = 2;
 
-    // Should handle zero elapsed time gracefully (line 365-368)
+    // Should handle zero elapsed time gracefully
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
     // Should not crash and CWND should remain valid
@@ -2018,7 +2017,7 @@ TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
     AckEvent.LargestAck = 3;
     AckEvent.LargestSentPacketNumber = 3;
 
-    // Should handle backwards time gracefully (line 580-586 with negative diff)
+    // Should handle backwards time gracefully
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
     // Should not crash and maintain valid state
