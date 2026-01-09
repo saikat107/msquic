@@ -9,6 +9,60 @@ BBR_STATE_PROBE_BW (2)   - Steady state, cycling pacing gains
 BBR_STATE_PROBE_RTT (3)  - Periodically probe for lower RTT
 ```
 
+## State Transition Diagram
+
+```
+                                       ┌──────────────────────────────────────────┐
+                                       │                                          │
+                                       │                                          ↓
+    ┌─────────────┐   T1: BtlbwFound  ┌─────────────┐  T2: Drained     ┌─────────────┐
+    │   STARTUP   │ ────────────────→ │    DRAIN    │ ───────────────→ │  PROBE_BW   │
+    │  (State 0)  │                   │  (State 1)  │                  │  (State 2)  │
+    └─────────────┘                   └─────────────┘                  └─────────────┘
+         ↑ │                                                                   │ │
+         │ │                                                                   │ │
+      T5 │ │ T3: RTT expired                                         T3: RTT   │ │
+         │ └─────────────────────────────────────┐                  expired    │ │
+         │                                       │                             │ │
+         │                                       ↓                             │ │
+         │                                   ┌─────────────┐                   │ │
+         │         T4: Probe complete        │  PROBE_RTT  │  ←────────────────┘ │
+         │         (!BtlbwFound)             │  (State 3)  │                     │
+         └───────────────────────────────────┤             │                     │
+                                             └─────────────┘                     │
+                                                     │                           │
+                                                     │ T4: Probe complete        │
+                                                     │     (BtlbwFound)          │
+                                                     └───────────────────────────┘
+```
+
+## Transitions
+
+### T1: STARTUP → DRAIN
+- **Trigger**: Bottleneck bandwidth found (BtlbwFound = TRUE)
+- **Condition**: Bandwidth growth stalled for 3 consecutive round trips
+- **API sequence**: Multiple OnDataSent → OnDataAcknowledged cycles with insufficient bandwidth growth
+
+### T2: DRAIN → PROBE_BW
+- **Trigger**: Queue drained to target
+- **Condition**: BytesInFlight <= BbrCongestionControlGetTargetCwnd(Cc, GAIN_UNIT)
+- **API sequence**: OnDataAcknowledged until in-flight bytes drop below target
+
+### T3: Any State (except PROBE_RTT) → PROBE_RTT
+- **Trigger**: RTT sample expired
+- **Condition**: !ExitingQuiescence && RttSampleExpired (MinRtt > 10 seconds old)
+- **API sequence**: Time passage (>10s without RTT updates) + OnDataAcknowledged
+
+### T4: PROBE_RTT → PROBE_BW (if BtlbwFound) 
+- **Trigger**: Probe complete
+- **Condition**: ProbeRttRoundValid && time >= ProbeRttEndTime && BtlbwFound
+- **API sequence**: OnDataAcknowledged with low inflight for 200ms+ with round completion
+
+### T5: PROBE_RTT → STARTUP (if !BtlbwFound)
+- **Trigger**: Probe complete without finding bottleneck
+- **Condition**: ProbeRttRoundValid && time >= ProbeRttEndTime && !BtlbwFound
+- **API sequence**: OnDataAcknowledged with low inflight for 200ms+ with round completion
+
 ## State Transitions (via OnDataAcknowledged)
 
 ### 1. STARTUP → DRAIN
@@ -165,3 +219,22 @@ Cc->QuicCongestionControlOnDataAcknowledged(Cc, &AckEvent);
 // Verify state
 ASSERT_EQ(Bbr->BbrState, ExpectedState);
 ```
+
+## Transition Testing Status
+
+| Transition | From State | To State | Status | Test Name |
+|------------|-----------|----------|--------|-----------|
+| T1 | STARTUP | DRAIN | ⚠️ Complex | StateTransition_StartupToDrain_BottleneckFound (attempted) |
+| T2 | DRAIN | PROBE_BW | ⚠️ Depends on T1 | StateTransition_DrainToProbeBw_QueueDrained (attempted) |
+| T3a | STARTUP | PROBE_RTT | ✅ Tested | StateTransition_StartupToProbeRtt_RttExpired |
+| T3b | PROBE_BW | PROBE_RTT | ✅ Tested | StateTransition_ProbeBwToProbeRtt_RttExpired |
+| T3c | DRAIN | PROBE_RTT | ✅ Tested | StateTransition_DrainToProbeRtt_RttExpired |
+| T4 | PROBE_RTT | PROBE_BW | ✅ Tested | StateTransition_ProbeRttToProbeBw_ProbeComplete |
+| T5 | PROBE_RTT | STARTUP | ✅ Tested | StateTransition_ProbeRttToStartup_NoBottleneckFound |
+
+**Coverage**: 5/7 transitions tested (71%), covering all RTT-expiration and PROBE_RTT cycle mechanics
+
+**Notes**:
+- T1 and T2 are contract-safe but complex to trigger via public APIs due to bandwidth estimation dependencies
+- T3 variants demonstrate RTT expiration works from any state and takes priority
+- T4 and T5 validate complete PROBE_RTT probe cycle with both exit paths

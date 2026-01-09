@@ -1502,3 +1502,538 @@ TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
     QuicSlidingWindowExtremumGet(&Bbr->BandwidthFilter.WindowedMaxFilter, &CurrentBandwidthEntry);
     ASSERT_GE(CurrentBandwidthEntry.Value, 0u);
 }
+
+//
+// ============================================================================
+// CATEGORY: STATE MACHINE TRANSITION TESTS
+// ============================================================================
+//
+
+//
+// Test: T1 - STARTUP → DRAIN transition via bottleneck bandwidth detection
+//
+// Scenario: BBR starts in STARTUP, sends packets across multiple rounds with
+//           insufficient bandwidth growth, triggering BtlbwFound and transitioning to DRAIN.
+// How: Initialize in STARTUP, send packets and ACK them across 3+ rounds without
+//      sufficient bandwidth growth (< 25% per round). Verify transition to DRAIN.
+//
+TEST(BbrTest, StateTransition_StartupToDrain_BottleneckFound)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+    uint64_t PacketNumber = 1;
+    uint32_t PacketSize = 1200;
+
+    // Verify initial state is STARTUP
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_STARTUP);
+    ASSERT_FALSE(Bbr->BtlbwFound);
+
+    // Round 1: Establish baseline bandwidth
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+    }
+
+    QUIC_SENT_PACKET_METADATA* Packet1 = AllocPacketMetadata(
+        PacketNumber, PacketSize, TimeNow, PacketSize * 10);
+    QUIC_ACK_EVENT AckEvent1 = {};
+    AckEvent1.TimeNow = TimeNow + 50000; // 50ms RTT
+    AckEvent1.AdjustedAckTime = AckEvent1.TimeNow;
+    AckEvent1.MinRttValid = TRUE;
+    AckEvent1.MinRtt = 50000;
+    AckEvent1.NumRetransmittableBytes = PacketSize * 10;
+    AckEvent1.NumTotalAckedRetransmittableBytes = PacketSize * 10;
+    AckEvent1.LargestAck = PacketNumber;
+    AckEvent1.LargestSentPacketNumber = PacketNumber + 10;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.AckedPackets = Packet1;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+    CXPLAT_FREE(Packet1, QUIC_POOL_TEST);
+
+    PacketNumber += 10;
+    TimeNow += 50000;
+
+    // Round 2: Minimal bandwidth increase (< 25%)
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+    }
+
+    QUIC_SENT_PACKET_METADATA* Packet2 = AllocPacketMetadata(
+        PacketNumber, PacketSize, TimeNow, PacketSize * 20);
+    QUIC_ACK_EVENT AckEvent2 = {};
+    AckEvent2.TimeNow = TimeNow + 50000;
+    AckEvent2.AdjustedAckTime = AckEvent2.TimeNow;
+    AckEvent2.MinRttValid = TRUE;
+    AckEvent2.MinRtt = 50000;
+    AckEvent2.NumRetransmittableBytes = PacketSize * 10;
+    AckEvent2.NumTotalAckedRetransmittableBytes = PacketSize * 20;
+    AckEvent2.LargestAck = PacketNumber;
+    AckEvent2.LargestSentPacketNumber = PacketNumber + 10;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.AckedPackets = Packet2;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+    CXPLAT_FREE(Packet2, QUIC_POOL_TEST);
+
+    PacketNumber += 10;
+    TimeNow += 50000;
+
+    // Round 3: Still no growth - should trigger BtlbwFound
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
+    }
+
+    QUIC_SENT_PACKET_METADATA* Packet3 = AllocPacketMetadata(
+        PacketNumber, PacketSize, TimeNow, PacketSize * 30);
+    QUIC_ACK_EVENT AckEvent3 = {};
+    AckEvent3.TimeNow = TimeNow + 50000;
+    AckEvent3.AdjustedAckTime = AckEvent3.TimeNow;
+    AckEvent3.MinRttValid = TRUE;
+    AckEvent3.MinRtt = 50000;
+    AckEvent3.NumRetransmittableBytes = PacketSize * 10;
+    AckEvent3.NumTotalAckedRetransmittableBytes = PacketSize * 30;
+    AckEvent3.LargestAck = PacketNumber;
+    AckEvent3.LargestSentPacketNumber = PacketNumber + 10;
+    AckEvent3.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent3.HasLoss = FALSE;
+    AckEvent3.AckedPackets = Packet3;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent3);
+    CXPLAT_FREE(Packet3, QUIC_POOL_TEST);
+
+    // Verify transition to DRAIN
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_DRAIN);
+    ASSERT_TRUE(Bbr->BtlbwFound);
+}
+
+//
+// Test: T2 - DRAIN → PROBE_BW transition after draining queue
+//
+// Scenario: BBR in DRAIN state drains inflight bytes to target congestion window,
+//           then transitions to PROBE_BW steady state.
+// How: Properly transition from STARTUP to DRAIN by detecting bottleneck, then
+//      ACK packets to drain BytesInFlight below target, verify transition to PROBE_BW.
+//
+TEST(BbrTest, StateTransition_DrainToProbeBw_QueueDrained)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+    uint64_t PacketNumber = 1;
+
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_STARTUP);
+
+    // Round 1: Establish bandwidth
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    }
+
+    QUIC_SENT_PACKET_METADATA* Packet1 = AllocPacketMetadata(PacketNumber, 1200, TimeNow, 12000);
+    QUIC_ACK_EVENT AckEvent1 = {};
+    AckEvent1.TimeNow = TimeNow + 50000;
+    AckEvent1.AdjustedAckTime = AckEvent1.TimeNow;
+    AckEvent1.MinRttValid = TRUE;
+    AckEvent1.MinRtt = 50000;
+    AckEvent1.NumRetransmittableBytes = 12000;
+    AckEvent1.NumTotalAckedRetransmittableBytes = 12000;
+    AckEvent1.LargestAck = PacketNumber;
+    AckEvent1.LargestSentPacketNumber = PacketNumber + 10;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.AckedPackets = Packet1;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+    CXPLAT_FREE(Packet1, QUIC_POOL_TEST);
+
+    PacketNumber += 10;
+    TimeNow += 50000;
+
+    // Rounds 2-4: Stall bandwidth growth to trigger BtlbwFound and transition to DRAIN
+    for (int round = 0; round < 3; round++) {
+        for (int i = 0; i < 10; i++) {
+            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+        }
+
+        QUIC_SENT_PACKET_METADATA* Packet = AllocPacketMetadata(PacketNumber, 1200, TimeNow, 12000 * (round + 2));
+        QUIC_ACK_EVENT AckEvent = {};
+        AckEvent.TimeNow = TimeNow + 50000;
+        AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.MinRtt = 50000;
+        AckEvent.NumRetransmittableBytes = 12000;
+        AckEvent.NumTotalAckedRetransmittableBytes = 12000 * (round + 2);
+        AckEvent.LargestAck = PacketNumber;
+        AckEvent.LargestSentPacketNumber = PacketNumber + 10;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.AckedPackets = Packet;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+        CXPLAT_FREE(Packet, QUIC_POOL_TEST);
+
+        PacketNumber += 10;
+        TimeNow += 50000;
+    }
+
+    // Should now be in DRAIN after detecting BtlbwFound
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_DRAIN);
+    ASSERT_TRUE(Bbr->BtlbwFound);
+
+    // Now drain: ACK all remaining BytesInFlight
+    uint32_t RemainingInFlight = Bbr->BytesInFlight;
+    if (RemainingInFlight > 0) {
+        QUIC_ACK_EVENT DrainAck = {};
+        DrainAck.TimeNow = TimeNow + 50000;
+        DrainAck.AdjustedAckTime = DrainAck.TimeNow;
+        DrainAck.MinRttValid = TRUE;
+        DrainAck.MinRtt = 50000;
+        DrainAck.NumRetransmittableBytes = RemainingInFlight;
+        DrainAck.NumTotalAckedRetransmittableBytes = 12000 * 5 + RemainingInFlight;
+        DrainAck.LargestAck = PacketNumber + 10;
+        DrainAck.LargestSentPacketNumber = PacketNumber + 10;
+        DrainAck.IsLargestAckedPacketAppLimited = FALSE;
+        DrainAck.HasLoss = FALSE;
+        DrainAck.AckedPackets = NULL;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
+    }
+
+    // Verify transition to PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_BW);
+}
+
+//
+// Test: T3 - STARTUP → PROBE_RTT transition via RTT sample expiration
+//
+// Scenario: BBR in STARTUP experiences RTT sample expiration (>10s old MinRtt),
+//           triggering a transition to PROBE_RTT to probe for lower RTT.
+// How: Initialize in STARTUP, establish MinRtt, simulate time passage >10s,
+//      then ACK with MinRttValid to trigger RttSampleExpired calculation.
+//
+TEST(BbrTest, StateTransition_StartupToProbeRtt_RttExpired)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Verify initial state
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_STARTUP);
+    ASSERT_TRUE(Bbr->RttSampleExpired); // Initially expired
+
+    // Send and ACK to establish MinRtt
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_ACK_EVENT AckEvent1 = {};
+    AckEvent1.TimeNow = TimeNow;
+    AckEvent1.AdjustedAckTime = TimeNow;
+    AckEvent1.MinRttValid = TRUE;
+    AckEvent1.MinRtt = 50000; // 50ms
+    AckEvent1.NumRetransmittableBytes = 1200;
+    AckEvent1.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent1.LargestAck = 1;
+    AckEvent1.LargestSentPacketNumber = 1;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+
+    // MinRtt should be set now
+    ASSERT_EQ(Bbr->MinRtt, 50000ULL);
+    ASSERT_FALSE(Bbr->RttSampleExpired);
+
+    // Simulate time passage > 10 seconds (10,000,000 microseconds)
+    TimeNow += 11000000;
+
+    // Send another packet
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    // ACK with MinRttValid=TRUE but higher RTT - this triggers expiration check
+    QUIC_ACK_EVENT AckEvent2 = {};
+    AckEvent2.TimeNow = TimeNow;
+    AckEvent2.AdjustedAckTime = TimeNow;
+    AckEvent2.MinRttValid = TRUE;
+    AckEvent2.MinRtt = 60000; // Slightly higher RTT
+    AckEvent2.NumRetransmittableBytes = 1200;
+    AckEvent2.NumTotalAckedRetransmittableBytes = 2400;
+    AckEvent2.LargestAck = 2;
+    AckEvent2.LargestSentPacketNumber = 2;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+
+    // Should transition to PROBE_RTT
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+}
+
+//
+// Test: T3 - PROBE_BW → PROBE_RTT transition via RTT sample expiration
+//
+// Scenario: BBR in PROBE_BW steady state experiences RTT expiration,
+//           transitions to PROBE_RTT to refresh MinRtt estimate.
+// How: Reach PROBE_BW, wait >10s, ACK with MinRttValid to trigger transition.
+//
+TEST(BbrTest, StateTransition_ProbeBwToProbeRtt_RttExpired)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Manually set to PROBE_BW with BtlbwFound
+    Bbr->BbrState = BBR_STATE_PROBE_BW;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestamp = TimeNow;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->RttSampleExpired = FALSE;
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Verify in PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_BW);
+
+    // Simulate time passage > 10s
+    TimeNow += 11000000;
+
+    // Send and ACK with MinRttValid to trigger expiration check
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow;
+    AckEvent.AdjustedAckTime = TimeNow;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 60000; // Slightly higher
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.LargestAck = 1;
+    AckEvent.LargestSentPacketNumber = 1;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should transition to PROBE_RTT
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+}
+
+//
+// Test: T4 - PROBE_RTT → PROBE_BW transition after probe completion with BtlbwFound
+//
+// Scenario: BBR in PROBE_RTT completes probe (low inflight for 200ms + round trip),
+//           then transitions back to PROBE_BW since bottleneck was found.
+// How: Enter PROBE_RTT, maintain low BytesInFlight, advance time 200ms+, complete
+//      round trip, verify transition to PROBE_BW.
+//
+TEST(BbrTest, StateTransition_ProbeRttToProbeBw_ProbeComplete)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Set to PROBE_RTT with BtlbwFound
+    Bbr->BbrState = BBR_STATE_PROBE_RTT;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->BytesInFlight = 0;
+
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+
+    // ACK with low inflight to start probe timer
+    QUIC_ACK_EVENT AckEvent1 = {};
+    AckEvent1.TimeNow = TimeNow;
+    AckEvent1.AdjustedAckTime = TimeNow;
+    AckEvent1.MinRttValid = TRUE;
+    AckEvent1.MinRtt = 50000;
+    AckEvent1.NumRetransmittableBytes = 0;
+    AckEvent1.NumTotalAckedRetransmittableBytes = 0;
+    AckEvent1.LargestAck = 1;
+    AckEvent1.LargestSentPacketNumber = 1;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+
+    // Should set ProbeRttEndTime but not exit yet
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+    ASSERT_TRUE(Bbr->ProbeRttEndTimeValid);
+
+    // Advance time past 200ms probe duration
+    TimeNow += 250000; // 250ms
+
+    // Complete a round trip
+    QUIC_ACK_EVENT AckEvent2 = {};
+    AckEvent2.TimeNow = TimeNow;
+    AckEvent2.AdjustedAckTime = TimeNow;
+    AckEvent2.MinRttValid = TRUE;
+    AckEvent2.MinRtt = 50000;
+    AckEvent2.NumRetransmittableBytes = 0;
+    AckEvent2.NumTotalAckedRetransmittableBytes = 0;
+    AckEvent2.LargestAck = 2;
+    AckEvent2.LargestSentPacketNumber = 2;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+
+    // Should transition to PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_BW);
+}
+
+//
+// Test: T5 - PROBE_RTT → STARTUP transition after probe completion without BtlbwFound
+//
+// Scenario: BBR in PROBE_RTT completes probe but bottleneck bandwidth was never found,
+//           so it returns to STARTUP to re-probe for bandwidth.
+// How: Enter PROBE_RTT without BtlbwFound, complete probe, verify transition to STARTUP.
+//
+TEST(BbrTest, StateTransition_ProbeRttToStartup_NoBottleneckFound)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Set to PROBE_RTT WITHOUT BtlbwFound
+    Bbr->BbrState = BBR_STATE_PROBE_RTT;
+    Bbr->BtlbwFound = FALSE; // Key difference from previous test
+    Bbr->MinRtt = 50000;
+    Bbr->BytesInFlight = 0;
+
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+    ASSERT_FALSE(Bbr->BtlbwFound);
+
+    // ACK with low inflight to start probe timer
+    QUIC_ACK_EVENT AckEvent1 = {};
+    AckEvent1.TimeNow = TimeNow;
+    AckEvent1.AdjustedAckTime = TimeNow;
+    AckEvent1.MinRttValid = TRUE;
+    AckEvent1.MinRtt = 50000;
+    AckEvent1.NumRetransmittableBytes = 0;
+    AckEvent1.NumTotalAckedRetransmittableBytes = 0;
+    AckEvent1.LargestAck = 1;
+    AckEvent1.LargestSentPacketNumber = 1;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+
+    // Should set ProbeRttEndTime but not exit yet
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+    ASSERT_TRUE(Bbr->ProbeRttEndTimeValid);
+
+    // Advance time past 200ms probe duration
+    TimeNow += 250000;
+
+    // Complete a round trip
+    QUIC_ACK_EVENT AckEvent2 = {};
+    AckEvent2.TimeNow = TimeNow;
+    AckEvent2.AdjustedAckTime = TimeNow;
+    AckEvent2.MinRttValid = TRUE;
+    AckEvent2.MinRtt = 50000;
+    AckEvent2.NumRetransmittableBytes = 0;
+    AckEvent2.NumTotalAckedRetransmittableBytes = 0;
+    AckEvent2.LargestAck = 2;
+    AckEvent2.LargestSentPacketNumber = 2;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+
+    // Should transition to STARTUP (not PROBE_BW)
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_STARTUP);
+}
+
+//
+// Test: T3 - DRAIN → PROBE_RTT transition via RTT expiration
+//
+// Scenario: BBR in DRAIN state experiences RTT sample expiration,
+//           transitions to PROBE_RTT before completing drain.
+// How: Enter DRAIN, simulate RTT expiration, ACK with MinRttValid to trigger transition.
+//
+TEST(BbrTest, StateTransition_DrainToProbeRtt_RttExpired)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Set to DRAIN with valid MinRtt
+    Bbr->BbrState = BBR_STATE_DRAIN;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestamp = TimeNow;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->RttSampleExpired = FALSE;
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Send some data to have BytesInFlight
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    }
+
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_DRAIN);
+
+    // Simulate time passage > 10s
+    TimeNow += 11000000;
+
+    // ACK with MinRttValid to trigger RTT expiration check
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow;
+    AckEvent.AdjustedAckTime = TimeNow;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 60000; // Higher than old MinRtt
+    AckEvent.NumRetransmittableBytes = 6000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 6000;
+    AckEvent.LargestAck = 5;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should transition to PROBE_RTT (RTT expiration takes priority)
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
+}
