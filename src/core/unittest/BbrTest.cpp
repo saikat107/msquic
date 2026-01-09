@@ -36,7 +36,7 @@ static void InitializeMockConnection(
     // Initialize Settings with defaults
     Connection.Settings.PacingEnabled = EnablePacing;
     Connection.Settings.NetStatsEventEnabled = FALSE;
-    
+
     // Initialize Stats
     Connection.Stats.QuicVersion = QUIC_VERSION_LATEST;
     Connection.Stats.Send.PersistentCongestionCount = 0;
@@ -45,7 +45,7 @@ static void InitializeMockConnection(
     Connection.Paths[0].GotFirstRttSample = FALSE;
     Connection.Paths[0].SmoothedRtt = 0;
     Connection.Paths[0].OneWayDelay = 0;
-    
+
     // Initialize send buffer fields that BBR may reference
     Connection.SendBuffer.IdealBytes = 0;
     Connection.SendBuffer.PostedBytes = 0;
@@ -72,7 +72,7 @@ static QUIC_SENT_PACKET_METADATA* AllocPacketMetadata(
     if (Packet == NULL) {
         return NULL;
     }
-    
+
     CxPlatZeroMemory(Packet, SIZEOF_QUIC_SENT_PACKET_METADATA(0));
     Packet->PacketNumber = PacketNumber;
     Packet->PacketLength = (uint16_t)PacketSize;
@@ -82,7 +82,7 @@ static QUIC_SENT_PACKET_METADATA* AllocPacketMetadata(
     Packet->Flags.IsAppLimited = FALSE;
     Packet->FrameCount = 0;
     Packet->Next = NULL;
-    
+
     if (HasLastAckedInfo) {
         Packet->LastAckedPacketInfo.SentTime = LastAckedSentTime;
         Packet->LastAckedPacketInfo.TotalBytesSent = LastAckedTotalBytesSent;
@@ -90,9 +90,15 @@ static QUIC_SENT_PACKET_METADATA* AllocPacketMetadata(
         Packet->LastAckedPacketInfo.AdjustedAckTime = LastAckedAckTime;
         Packet->LastAckedPacketInfo.TotalBytesAcked = LastAckedTotalBytesAcked;
     }
-    
+
     return Packet;
 }
+
+//
+// ============================================================================
+// CATEGORY 1: INITIALIZATION AND RESET TESTS
+// ============================================================================
+//
 
 //
 // Test 1: Comprehensive initialization verification
@@ -204,6 +210,12 @@ TEST(BbrTest, InitializeBoundaries)
 }
 
 //
+// ============================================================================
+// CATEGORY 2: BASIC DATA SENDING AND ACKNOWLEDGMENT TESTS
+// ============================================================================
+//
+
+//
 // Test 3: OnDataSent updates BytesInFlight
 // Scenario: Sending data increases BytesInFlight and updates BytesInFlightMax.
 //
@@ -260,6 +272,12 @@ TEST(BbrTest, OnDataInvalidatedDecreasesInflight)
 }
 
 //
+// ============================================================================
+// CATEGORY 3: LOSS DETECTION AND RECOVERY TESTS
+// ============================================================================
+//
+
+//
 // Test 5: OnDataLost enters recovery
 // Scenario: Packet loss causes BBR to enter recovery state and reduce recovery window.
 //
@@ -313,7 +331,7 @@ TEST(BbrTest, ResetReturnsToStartup)
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 3000);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Reset with FullReset = TRUE
     Connection.CongestionControl.QuicCongestionControlReset(&Connection.CongestionControl, TRUE);
 
@@ -343,7 +361,7 @@ TEST(BbrTest, ResetPartialPreservesInflight)
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, BytesSent);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Reset with FullReset = FALSE
     Connection.CongestionControl.QuicCongestionControlReset(&Connection.CongestionControl, FALSE);
 
@@ -351,6 +369,12 @@ TEST(BbrTest, ResetPartialPreservesInflight)
     ASSERT_EQ(Bbr->BbrState, 0u); // BBR_STATE_STARTUP
     ASSERT_EQ(Bbr->BytesInFlight, BytesSent); // Preserved!
 }
+
+//
+// ============================================================================
+// CATEGORY 4: CONGESTION CONTROL WINDOW AND SENDING TESTS
+// ============================================================================
+//
 
 //
 // Test 8: CanSend respects congestion window
@@ -466,10 +490,10 @@ TEST(BbrTest, OnDataAcknowledgedBasic)
 
     // Verify BytesInFlight decreased
     ASSERT_EQ(Bbr->BytesInFlight, 0u);
-    
+
     // Verify round trip counter incremented
     ASSERT_EQ(Bbr->RoundTripCounter, 1u);
-    
+
     // Verify MinRTT updated
     ASSERT_EQ(Bbr->MinRtt, 50000u);
     ASSERT_TRUE(Bbr->MinRttTimestampValid);
@@ -477,6 +501,12 @@ TEST(BbrTest, OnDataAcknowledgedBasic)
     // Still in STARTUP
     ASSERT_EQ(Bbr->BbrState, 0u);
 }
+
+//
+// ============================================================================
+// CATEGORY 5: BBR STATE MACHINE TRANSITION TESTS
+// ============================================================================
+//
 
 //
 // Test 12: State transition STARTUP → DRAIN
@@ -507,19 +537,19 @@ TEST(BbrTest, StateTransitionStartupToDrain)
     uint64_t LastAckedTotalBytesSent = 0;
     uint64_t LastAckedAckTime = 0;
     uint64_t LastAckedTotalBytesAcked = 0;
-    
+
     for (int round = 0; round < 4; round++) {
         // Send packets and build metadata - stagger send times for bandwidth calculation
         QUIC_SENT_PACKET_METADATA* PacketArray[5];
         uint64_t PacketSendTime = TimeNow;
         BOOLEAN FirstPacketInRound = (round == 0);
-        
+
         for (int i = 0; i < 5; i++) {
             uint32_t PacketSize = 1200;
             Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            
+
             TotalBytesSent += PacketSize;
-            
+
             // Set LastAckedPacketInfo for packets after the first one
             if (!FirstPacketInRound || i > 0) {
                 PacketArray[i] = AllocPacketMetadata(
@@ -531,11 +561,11 @@ TEST(BbrTest, StateTransitionStartupToDrain)
                 PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
             }
             ASSERT_NE(PacketArray[i], nullptr);
-            
+
             if (i > 0) {
                 PacketArray[i]->Next = PacketArray[i-1];
             }
-            
+
             PacketSendTime += 1000; // 1ms between packet sends for bandwidth calc
         }
 
@@ -557,13 +587,13 @@ TEST(BbrTest, StateTransitionStartupToDrain)
         AckEvent.AckedPackets = PacketArray[4]; // Head of linked list
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-        
+
         // Update last acked info for next round
         LastAckedSentTime = PacketSendTime - 1000; // Last packet's send time
         LastAckedTotalBytesSent = TotalBytesSent;
         LastAckedAckTime = TimeNow;
         LastAckedTotalBytesAcked = TotalBytesSent;
-        
+
         // Free packet metadata
         for (int i = 0; i < 5; i++) {
             CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
@@ -599,18 +629,18 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
     uint64_t LastAckedTotalBytesSent = 0;
     uint64_t LastAckedAckTime = 0;
     uint64_t LastAckedTotalBytesAcked = 0;
-    
+
     for (int round = 0; round < 4; round++) {
         QUIC_SENT_PACKET_METADATA* PacketArray[5];
         uint64_t PacketSendTime = TimeNow;
         BOOLEAN FirstPacketInRound = (round == 0);
-        
+
         for (int i = 0; i < 5; i++) {
             uint32_t PacketSize = 1200;
             Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            
+
             TotalBytesSent += PacketSize;
-            
+
             if (!FirstPacketInRound || i > 0) {
                 PacketArray[i] = AllocPacketMetadata(
                     ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
@@ -620,11 +650,11 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
                 PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
             }
             ASSERT_NE(PacketArray[i], nullptr);
-            
+
             if (i > 0) {
                 PacketArray[i]->Next = PacketArray[i-1];
             }
-            
+
             PacketSendTime += 1000;
         }
 
@@ -645,12 +675,12 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
         AckEvent.AckedPackets = PacketArray[4];
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-        
+
         LastAckedSentTime = PacketSendTime - 1000;
         LastAckedTotalBytesSent = TotalBytesSent;
         LastAckedAckTime = TimeNow;
         LastAckedTotalBytesAcked = TotalBytesSent;
-        
+
         for (int i = 0; i < 5; i++) {
             CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
         }
@@ -661,7 +691,7 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
 
     // Now drain by ACKing remaining inflight bytes if any
     TimeNow += 50000;
-    
+
     uint32_t RemainingBytes = Bbr->BytesInFlight;
     if (RemainingBytes > 0) {
         QUIC_ACK_EVENT DrainAck = {};
@@ -709,18 +739,18 @@ TEST(BbrTest, StateTransitionToProbRtt)
     uint64_t LastAckedTotalBytesSent = 0;
     uint64_t LastAckedAckTime = 0;
     uint64_t LastAckedTotalBytesAcked = 0;
-    
+
     for (int round = 0; round < 4; round++) {
         QUIC_SENT_PACKET_METADATA* PacketArray[5];
         uint64_t PacketSendTime = TimeNow;
         BOOLEAN FirstPacketInRound = (round == 0);
-        
+
         for (int i = 0; i < 5; i++) {
             uint32_t PacketSize = 1200;
             Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            
+
             TotalBytesSent += PacketSize;
-            
+
             if (!FirstPacketInRound || i > 0) {
                 PacketArray[i] = AllocPacketMetadata(
                     ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
@@ -730,11 +760,11 @@ TEST(BbrTest, StateTransitionToProbRtt)
                 PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
             }
             ASSERT_NE(PacketArray[i], nullptr);
-            
+
             if (i > 0) {
                 PacketArray[i]->Next = PacketArray[i-1];
             }
-            
+
             PacketSendTime += 1000;
         }
 
@@ -755,12 +785,12 @@ TEST(BbrTest, StateTransitionToProbRtt)
         AckEvent.AckedPackets = PacketArray[4];
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-        
+
         LastAckedSentTime = PacketSendTime - 1000;
         LastAckedTotalBytesSent = TotalBytesSent;
         LastAckedAckTime = TimeNow;
         LastAckedTotalBytesAcked = TotalBytesSent;
-        
+
         for (int i = 0; i < 5; i++) {
             CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
         }
@@ -839,18 +869,18 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
     uint64_t LastAckedTotalBytesSent = 0;
     uint64_t LastAckedAckTime = 0;
     uint64_t LastAckedTotalBytesAcked = 0;
-    
+
     for (int round = 0; round < 4; round++) {
         QUIC_SENT_PACKET_METADATA* PacketArray[3];
         uint64_t PacketSendTime = TimeNow;
         BOOLEAN FirstPacketInRound = (round == 0);
-        
+
         for (int i = 0; i < 3; i++) {
             uint32_t PacketSize = 1200;
             Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            
+
             TotalBytesSent += PacketSize;
-            
+
             if (!FirstPacketInRound || i > 0) {
                 PacketArray[i] = AllocPacketMetadata(
                     ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
@@ -860,11 +890,11 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
                 PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
             }
             ASSERT_NE(PacketArray[i], nullptr);
-            
+
             if (i > 0) {
                 PacketArray[i]->Next = PacketArray[i-1];
             }
-            
+
             PacketSendTime += 1000;
         }
         TimeNow += 50000;
@@ -884,12 +914,12 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
         AckEvent.AckedPackets = PacketArray[2];
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-        
+
         LastAckedSentTime = PacketSendTime - 1000;
         LastAckedTotalBytesSent = TotalBytesSent;
         LastAckedAckTime = TimeNow;
         LastAckedTotalBytesAcked = TotalBytesSent;
-        
+
         for (int i = 0; i < 3; i++) {
             CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
         }
@@ -969,6 +999,12 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
 }
 
 //
+// ============================================================================
+// CATEGORY 6: PACING AND SEND ALLOWANCE TESTS
+// ============================================================================
+//
+
+//
 // Test 16: GetSendAllowance with pacing disabled
 // Scenario: When pacing is disabled, send allowance equals available congestion window.
 //
@@ -1010,7 +1046,7 @@ TEST(BbrTest, GetSendAllowanceWithPacing)
     InitializeMockConnection(Connection, 1280, TRUE); // Pacing enabled
     Connection.Paths[0].GotFirstRttSample = TRUE;
     Connection.Paths[0].SmoothedRtt = 50000; // 50ms RTT
-    
+
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
@@ -1018,7 +1054,7 @@ TEST(BbrTest, GetSendAllowanceWithPacing)
     // Send some data first to establish bandwidth
     uint64_t PacketNum = 1;
     uint64_t TimeNow = 100000;
-    
+
     for (int i = 0; i < 3; i++) {
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 4000);
         PacketNum++;
@@ -1046,11 +1082,17 @@ TEST(BbrTest, GetSendAllowanceWithPacing)
 
     // With pacing, allowance should be limited (less than full window)
     uint32_t AvailableWindow = Bbr->CongestionWindow - Bbr->BytesInFlight;
-    
+
     // Pacing should limit the send
     ASSERT_GT(Allowance, 0u); // Should allow some sending
     ASSERT_LE(Allowance, AvailableWindow); // But not more than available
 }
+
+//
+// ============================================================================
+// CATEGORY 7: NETWORK STATISTICS AND MONITORING TESTS
+// ============================================================================
+//
 
 //
 // Test 18: GetNetworkStatistics through callback
@@ -1069,7 +1111,7 @@ TEST(BbrTest, GetNetworkStatisticsViaCongestionEvent)
     // and reports to the connection via QuicConnIndicateEvent
     // We can't directly test it without violating contract, but we know it's covered
     // by our OnDataAcknowledged tests which internally call it.
-    
+
     // This test is a placeholder to document that GetNetworkStatistics
     // is exercised through the OnDataAcknowledged code path
     ASSERT_TRUE(true);
@@ -1089,7 +1131,7 @@ TEST(BbrTest, CanSendFlowControlUnblocking)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Fill BytesInFlight via OnDataSent to block
     for (int i = 0; i < 20; i++) {
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
@@ -1101,7 +1143,7 @@ TEST(BbrTest, CanSendFlowControlUnblocking)
 
     // Reduce BytesInFlight via OnDataInvalidated to unblock
     Connection.CongestionControl.QuicCongestionControlOnDataInvalidated(&Connection.CongestionControl, 15000);
-    
+
     ASSERT_TRUE(Connection.CongestionControl.QuicCongestionControlCanSend(&Connection.CongestionControl));
     // Should have unblocked
     ASSERT_EQ(Connection.OutFlowBlockedReasons & QUIC_FLOW_BLOCKED_CONGESTION_CONTROL, 0u);
@@ -1121,7 +1163,7 @@ TEST(BbrTest, ExitingQuiescenceOnSendAfterIdle)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Set app-limited and idle
     Bbr->BandwidthFilter.AppLimited = TRUE;
     Bbr->BytesInFlight = 0;
@@ -1162,9 +1204,9 @@ TEST(BbrTest, RecoveryWindowUpdateOnAck)
     LossEvent.LargestSentPacketNumber = PacketNum + 10;
     LossEvent.NumRetransmittableBytes = 1200;
     LossEvent.PersistentCongestion = FALSE;
-    
+
     Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
-    
+
     // Now ACK a packet - this should update recovery window
     QUIC_ACK_EVENT AckEvent = {};
     AckEvent.TimeNow = TimeNow + 50000;
@@ -1188,6 +1230,12 @@ TEST(BbrTest, RecoveryWindowUpdateOnAck)
 }
 
 //
+// ============================================================================
+// CATEGORY 8: APP-LIMITED DETECTION TESTS
+// ============================================================================
+//
+
+//
 // Test 22: SetAppLimited success path
 // Scenario: When BytesInFlight is low, SetAppLimited succeeds.
 //
@@ -1201,7 +1249,7 @@ TEST(BbrTest, SetAppLimitedSuccess)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Send just a little bit
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
 
@@ -1214,10 +1262,16 @@ TEST(BbrTest, SetAppLimitedSuccess)
     // Should be marked app-limited
     ASSERT_TRUE(Bbr->BandwidthFilter.AppLimited);
     ASSERT_EQ(Bbr->BandwidthFilter.AppLimitedExitTarget, 42ull);
-    
+
     // IsAppLimited should return TRUE
     ASSERT_TRUE(Connection.CongestionControl.QuicCongestionControlIsAppLimited(&Connection.CongestionControl));
 }
+
+//
+// ============================================================================
+// CATEGORY 9: EDGE CASES AND ERROR HANDLING TESTS
+// ============================================================================
+//
 
 //
 // Test 23: Zero-length packet handling in OnDataAcknowledged
@@ -1287,13 +1341,13 @@ TEST(BbrTest, PacingSendQuantumTiers)
     for (int round = 0; round < 5; round++) {
         QUIC_SENT_PACKET_METADATA* PacketArray[10];
         uint64_t PacketSendTime = TimeNow;
-        
+
         for (int i = 0; i < 10; i++) {
             uint32_t PacketSize = 1200;
             Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            
+
             TotalBytesSent += PacketSize;
-            
+
             if (round > 0 || i > 0) {
                 PacketArray[i] = AllocPacketMetadata(
                     ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
@@ -1303,11 +1357,11 @@ TEST(BbrTest, PacingSendQuantumTiers)
                 PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
             }
             ASSERT_NE(PacketArray[i], nullptr);
-            
+
             if (i > 0) {
                 PacketArray[i]->Next = PacketArray[i-1];
             }
-            
+
             PacketSendTime += 500; // 0.5ms between packets for high bandwidth
         }
 
@@ -1328,12 +1382,12 @@ TEST(BbrTest, PacingSendQuantumTiers)
         AckEvent.AckedPackets = PacketArray[9];
 
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-        
+
         LastAckedSentTime = PacketSendTime - 500;
         LastAckedTotalBytesSent = TotalBytesSent;
         LastAckedAckTime = TimeNow;
         LastAckedTotalBytesAcked = TotalBytesSent;
-        
+
         for (int i = 0; i < 10; i++) {
             CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
         }
@@ -1355,10 +1409,10 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
 
     Settings.InitialWindowPackets = 10;
     InitializeMockConnection(Connection, 1280);
-    
+
     // Enable NetStatsEvent - this will trigger lines 787, 899, and related stats functions
     Connection.Settings.NetStatsEventEnabled = TRUE;
-    
+
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     uint64_t TimeNow = 100000;
@@ -1396,7 +1450,7 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
     CXPLAT_FREE(Packet, QUIC_POOL_TEST);
-    
+
     // Verify the ACK was processed
     ASSERT_TRUE(true); // Stats functions were called internally
 }
@@ -1412,10 +1466,10 @@ TEST(BbrTest, PersistentCongestionResetsWindow)
 
     Settings.InitialWindowPackets = 10;
     InitializeMockConnection(Connection, 1280);
-    
+
     // Enable NetStatsEvent to cover line 899 as well
     Connection.Settings.NetStatsEventEnabled = TRUE;
-    
+
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
@@ -1456,7 +1510,7 @@ TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Fill BytesInFlight beyond CWND
     for (int i = 0; i < 20; i++) {
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
@@ -1464,10 +1518,10 @@ TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
 
     // Ensure BytesInFlight > CWND
     ASSERT_GT(Bbr->BytesInFlight, Bbr->CongestionWindow);
-    
+
     // Mark as not app-limited initially
     Bbr->BandwidthFilter.AppLimited = FALSE;
-    
+
     Connection.LossDetection.LargestSentPacketNumber = 100;
 
     // Call SetAppLimited - should hit line 989 (early return)
@@ -1534,6 +1588,12 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 }
 
 //
+// ============================================================================
+// CATEGORY 10: PUBLIC API COVERAGE TESTS
+// ============================================================================
+//
+
+//
 // Scenario: Call GetBytesInFlightMax function pointer
 // Tests the public API getter for BytesInFlightMax (lines 411-413).
 //
@@ -1565,7 +1625,7 @@ TEST(BbrTest, SendAllowanceWithPacingDisabled)
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
 
     QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
-    
+
     // Establish some bandwidth
     for (int i = 0; i < 3; i++) {
         Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
@@ -1620,48 +1680,6 @@ TEST(BbrTest, ImplicitAckTriggersNetStats)
     // Implicit ACK should update CWND (lines 783-789)
     ASSERT_GE(Bbr->CongestionWindow, InitialCwnd);
 }
-
-//
-// Scenario: Large packet send with high pacing rate (send quantum high tier)
-// Tests the rare high pacing rate path (line 723) where pacing rate exceeds 1.2 Mbps.
-// NOTE: Commented out - difficult to reliably achieve >1.2 Mbps pacing rate in unit test.
-/*TEST(BbrTest, SendQuantumHighPacingRateTier)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    InitializeMockConnection(Connection, 1480, TRUE); // Enable pacing, larger MTU
-    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
-    uint64_t TimeNow = 1000000;
-    
-    // Achieve high bandwidth by simulating many successful ACKs
-    for (int i = 0; i < 100; i++) {
-        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1480);
-        
-        QUIC_ACK_EVENT AckEvent = {};
-        AckEvent.TimeNow = TimeNow + (i * 1000); // 1ms apart (very fast)
-        AckEvent.AdjustedAckTime = AckEvent.TimeNow;
-        AckEvent.IsImplicit = FALSE;
-        AckEvent.NumRetransmittableBytes = 1480;
-        AckEvent.NumTotalAckedRetransmittableBytes = 1480 * (i + 1);
-        AckEvent.HasLoss = FALSE;
-        AckEvent.MinRttValid = TRUE;
-        AckEvent.MinRtt = 1000; // 1ms RTT (very low)
-        AckEvent.LargestAck = i + 1;
-        AckEvent.LargestSentPacketNumber = i + 1;
-        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-        AckEvent.AckedPackets = NULL;
-
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-    }
-
-    // At this point, bandwidth should be very high (>1.2 Mbps)
-    // SendQuantum should be on the high tier (line 723): min(PacingRate * 1ms, 64KB)
-    // Observable: SendQuantum should be capped or at least much larger than 2*MTU
-    ASSERT_GT(Bbr->SendQuantum, 1480u * 2); // More than 2 packets
-}*/
 
 //
 // Scenario: Backwards timestamp and zero elapsed time in bandwidth calculation
