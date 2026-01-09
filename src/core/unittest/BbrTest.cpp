@@ -110,8 +110,24 @@ static QUIC_SENT_PACKET_METADATA* AllocPacketMetadata(
 
 //
 // Test 1: Comprehensive initialization verification
-// Scenario: Verifies BbrCongestionControlInitialize correctly sets up all BBR state
-// including settings, function pointers, state flags, filters, and initial values.
+//
+// What: Tests BbrCongestionControlInitialize to verify all BBR state is correctly initialized
+//       including settings, function pointers, state flags, filters, and initial values.
+// How: Calls BbrCongestionControlInitialize with valid settings, then checks:
+//      - Settings are stored (InitialCongestionWindowPackets)
+//      - Congestion window initialized to valid initial value
+//      - All 14 function pointers are set (non-null) except ECN (null for BBR)
+//      - BBR starts in STARTUP state with correct gains
+//      - Filters and validity flags correctly initialized
+// Asserts:
+//   - InitialCongestionWindowPackets matches settings
+//   - CongestionWindow > 0 and equals InitialCongestionWindow
+//   - All required function pointers are non-null
+//   - BbrState = BBR_STATE_STARTUP (0)
+//   - RecoveryState = NOT_RECOVERY (0)
+//   - MinRtt = UINT64_MAX (unsampled)
+//   - Pacing/cwnd gains > 256 (kHighGain for STARTUP)
+//   - All validity flags FALSE except what's expected for initial state
 //
 TEST(BbrTest, InitializeComprehensive)
 {
@@ -185,8 +201,18 @@ TEST(BbrTest, InitializeComprehensive)
 
 //
 // Test 2: Initialization with boundary parameter values
-// Scenario: Tests initialization with extreme boundary values for MTU and InitialWindowPackets
-// to ensure robustness across all valid configurations.
+//
+// What: Tests BbrCongestionControlInitialize with extreme but valid boundary values
+//       for MTU (1200-65535) and InitialWindowPackets (1-1000).
+// How: Initializes BBR three times with different combinations:
+//      1. Minimum MTU (1200) with minimum window (1 packet)
+//      2. Maximum MTU (65535) with large window (1000 packets)
+//      3. Typical configuration (1280 MTU, 10 packets)
+//      Each time, verifies CongestionWindow is computed correctly.
+// Asserts:
+//   - CongestionWindow > 0 for all boundary cases
+//   - InitialCongestionWindowPackets stored correctly
+//   - Typical case has reasonable window size (10k-15k bytes range)
 //
 TEST(BbrTest, InitializeBoundaries)
 {
@@ -225,7 +251,15 @@ TEST(BbrTest, InitializeBoundaries)
 
 //
 // Test 3: OnDataSent updates BytesInFlight
-// Scenario: Sending data increases BytesInFlight and updates BytesInFlightMax.
+//
+// What: Tests that BbrCongestionControlOnDataSent correctly tracks inflight bytes.
+// How: Initializes BBR, captures initial BytesInFlight and BytesInFlightMax,
+//      calls OnDataSent with 1000 bytes, then verifies:
+//      - BytesInFlight increased by exactly 1000
+//      - BytesInFlightMax updated if new max reached
+// Asserts:
+//   - BytesInFlight = InitialInFlight + 1000
+//   - BytesInFlightMax >= InitialMax (monotonically increasing)
 //
 TEST(BbrTest, OnDataSentIncreasesInflight)
 {
@@ -253,7 +287,13 @@ TEST(BbrTest, OnDataSentIncreasesInflight)
 
 //
 // Test 4: OnDataInvalidated decreases BytesInFlight
-// Scenario: Invalidating sent data (e.g., 0-RTT rejection) reduces BytesInFlight.
+//
+// What: Tests BbrCongestionControlOnDataInvalidated decreases BytesInFlight correctly.
+//       This happens when sent data is invalidated (e.g., 0-RTT rejected).
+// How: Sends 2000 bytes to increase BytesInFlight, then invalidates 500 bytes,
+//      and verifies BytesInFlight decreased by exactly 500.
+// Asserts:
+//   - BytesInFlight = (InitialInFlight + 2000) - 500
 //
 TEST(BbrTest, OnDataInvalidatedDecreasesInflight)
 {
@@ -287,7 +327,18 @@ TEST(BbrTest, OnDataInvalidatedDecreasesInflight)
 
 //
 // Test 5: OnDataLost enters recovery
-// Scenario: Packet loss causes BBR to enter recovery state and reduce recovery window.
+//
+// What: Tests that BbrCongestionControlOnDataLost enters recovery on packet loss.
+// How: Sends 5000 bytes, then triggers loss via QUIC_LOSS_EVENT with:
+//      - LargestPacketNumberLost = 10
+//      - NumRetransmittableBytes = 1000 (bytes lost)
+//      - PersistentCongestion = FALSE
+//      Verifies BBR transitions from NOT_RECOVERY to recovery state.
+// Asserts:
+//   - Initially RecoveryState = 0 (NOT_RECOVERY)
+//   - After loss, RecoveryState != 0 (CONSERVATIVE or GROWTH)
+//   - EndOfRecoveryValid = TRUE
+//   - BytesInFlight decreased by lost bytes (1000)
 //
 TEST(BbrTest, OnDataLostEntersRecovery)
 {
@@ -324,7 +375,18 @@ TEST(BbrTest, OnDataLostEntersRecovery)
 
 //
 // Test 6: Reset returns to STARTUP
-// Scenario: Calling Reset with FullReset=TRUE returns BBR to initial STARTUP state.
+//
+// What: Tests BbrCongestionControlReset with FullReset=TRUE completely resets BBR.
+// How: Sends data to modify state, then calls Reset(TRUE), and verifies:
+//      - BBR returns to STARTUP state
+//      - BytesInFlight reset to 0
+//      - All state flags cleared (BtlbwFound, RoundTripCounter, RecoveryState)
+// Asserts:
+//   - BbrState = BBR_STATE_STARTUP (0)
+//   - BytesInFlight = 0
+//   - BtlbwFound = FALSE
+//   - RoundTripCounter = 0
+//   - RecoveryState = NOT_RECOVERY (0)
 //
 TEST(BbrTest, ResetReturnsToStartup)
 {
@@ -353,7 +415,14 @@ TEST(BbrTest, ResetReturnsToStartup)
 
 //
 // Test 7: Reset with FullReset=FALSE preserves BytesInFlight
-// Scenario: Partial reset preserves inflight bytes.
+//
+// What: Tests BbrCongestionControlReset with FullReset=FALSE (partial reset).
+// How: Sends 3000 bytes, calls Reset(FALSE), and verifies:
+//      - BBR returns to STARTUP state
+//      - But BytesInFlight is preserved (not reset)
+// Asserts:
+//   - BbrState = BBR_STATE_STARTUP (0) after reset
+//   - BytesInFlight = 3000 (preserved, not cleared)
 //
 TEST(BbrTest, ResetPartialPreservesInflight)
 {
@@ -386,7 +455,14 @@ TEST(BbrTest, ResetPartialPreservesInflight)
 
 //
 // Test 8: CanSend respects congestion window
-// Scenario: CanSend returns FALSE when BytesInFlight >= CongestionWindow.
+//
+// What: Tests BbrCongestionControlCanSend enforces congestion window limits.
+// How: 
+//      Scenario 1: BytesInFlight < CWND → CanSend returns TRUE
+//      Scenario 2: Fill window via OnDataSent → CanSend returns FALSE
+// Asserts:
+//   - Initially CanSend = TRUE (under window)
+//   - After filling window, CanSend = FALSE (at/over window)
 //
 TEST(BbrTest, CanSendRespectsWindow)
 {
@@ -412,7 +488,16 @@ TEST(BbrTest, CanSendRespectsWindow)
 
 //
 // Test 9: Exemptions bypass congestion control
-// Scenario: Setting exemptions allows sending even when congestion blocked.
+//
+// What: Tests exemption mechanism allows sending despite congestion window being full.
+// How: Fills window to block sending (CanSend=FALSE), then:
+//      1. Sets exemption count to 2 via SetExemption
+//      2. Verifies CanSend now returns TRUE
+//      3. Sends packet and verifies exemption count decrements to 1
+// Asserts:
+//   - Initially blocked (CanSend=FALSE after filling window)
+//   - After SetExemption(2), CanSend=TRUE
+//   - After sending, GetExemptions returns 1 (decremented)
 //
 TEST(BbrTest, ExemptionsBypassControl)
 {
@@ -440,7 +525,12 @@ TEST(BbrTest, ExemptionsBypassControl)
 
 //
 // Test 10: OnSpuriousCongestionEvent returns FALSE
-// Scenario: BBR doesn't revert on spurious loss detection.
+//
+// What: Tests BbrCongestionControlOnSpuriousCongestionEvent always returns FALSE.
+//       BBR does not revert congestion window on spurious loss detection.
+// How: Calls OnSpuriousCongestionEvent and verifies it returns FALSE.
+// Asserts:
+//   - Return value is FALSE (BBR does not support revert)
 //
 TEST(BbrTest, SpuriousCongestionEventNoRevert)
 {
@@ -458,7 +548,19 @@ TEST(BbrTest, SpuriousCongestionEventNoRevert)
 
 //
 // Test 11: Basic OnDataAcknowledged without state transition
-// Scenario: Simple ACK processing that decreases BytesInFlight and updates round trip counter.
+//
+// What: Tests basic BbrCongestionControlOnDataAcknowledged processing without state change.
+// How: Sends 3000 bytes, then processes ACK with:
+//      - NumRetransmittableBytes = 3000 (all bytes ACKed)
+//      - MinRtt = 50ms
+//      - No loss
+//      Verifies: BytesInFlight decreases, RoundTripCounter increments, MinRTT updated
+// Asserts:
+//   - BytesInFlight = 0 after ACK
+//   - RoundTripCounter = 1 (incremented)
+//   - MinRtt = 50000us (updated)
+//   - MinRttTimestampValid = TRUE
+//   - BbrState still = BBR_STATE_STARTUP (0)
 //
 TEST(BbrTest, OnDataAcknowledgedBasic)
 {
@@ -518,8 +620,16 @@ TEST(BbrTest, OnDataAcknowledgedBasic)
 
 //
 // Test 12: State transition STARTUP → DRAIN
-// Scenario: Simulate bandwidth growth stalling for 3 rounds to find bottleneck and transition to DRAIN.
-// Uses packet metadata to enable bandwidth estimation.
+//
+// What: Tests BBR's transition from STARTUP (0) to DRAIN (1) when bandwidth discovery completes.
+// How: Sends packets with metadata over 4 rounds (50ms each) with minimal bandwidth growth.
+//      Each round sends 5 packets (1200 bytes each) with metadata containing LastAckedPacketInfo
+//      to enable bandwidth estimation. After 3 rounds of stalled growth, BtlbwFound becomes TRUE.
+// Asserts:
+//   - Initially BbrState = BBR_STATE_STARTUP (0)
+//   - BtlbwFound = FALSE initially
+//   - After 4 rounds, BtlbwFound = TRUE
+//   - Final state is DRAIN (1) or PROBE_BW (2) depending on drain timing
 //
 TEST(BbrTest, StateTransitionStartupToDrain)
 {
@@ -1045,7 +1155,14 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
 
 //
 // Test 16: GetSendAllowance with pacing disabled
-// Scenario: When pacing is disabled, send allowance equals available congestion window.
+//
+// What: Tests BbrCongestionControlGetSendAllowance when pacing is disabled.
+// How: Initializes BBR with PacingEnabled=FALSE, sends half the window,
+//      then calls GetSendAllowance and verifies it returns the full available window
+//      (not rate-limited since pacing is off).
+// Asserts:
+//   - Send allowance = CongestionWindow - BytesInFlight
+//   - No pacing rate limitation applied
 //
 TEST(BbrTest, GetSendAllowanceNoPacing)
 {
@@ -1074,7 +1191,16 @@ TEST(BbrTest, GetSendAllowanceNoPacing)
 
 //
 // Test 17: GetSendAllowance with pacing enabled
-// Scenario: With pacing enabled and valid RTT, allowance is rate-limited.
+//
+// What: Tests BbrCongestionControlGetSendAllowance when pacing is enabled and RTT is known.
+// How: Initializes BBR with PacingEnabled=TRUE and SmoothedRtt=50ms,
+//      sends 3 packets (12000 bytes), ACKs them to establish bandwidth,
+//      then calls GetSendAllowance(10ms elapsed) and verifies:
+//      - Allowance > 0 (allows some sending)
+//      - Allowance <= AvailableWindow (pacing limits it below full window)
+// Asserts:
+//   - Allowance > 0 (not completely blocked)
+//   - Allowance <= (CongestionWindow - BytesInFlight) [pacing applies]
 //
 TEST(BbrTest, GetSendAllowanceWithPacing)
 {
@@ -1135,7 +1261,13 @@ TEST(BbrTest, GetSendAllowanceWithPacing)
 
 //
 // Test 18: GetNetworkStatistics through callback
-// Scenario: Trigger NETWORK_STATISTICS event through ACK to cover GetNetworkStatistics code path.
+//
+// What: Documents that BbrCongestionControlGetNetworkStatistics is tested indirectly.
+// How: GetNetworkStatistics is called internally during OnDataAcknowledged when
+//      NetStatsEventEnabled=TRUE (covered by other tests like Test 25).
+//      This is a documentation placeholder to note that the code path is exercised.
+// Asserts:
+//   - TRUE (placeholder - actual coverage happens in other tests)
 //
 TEST(BbrTest, GetNetworkStatisticsViaCongestionEvent)
 {
@@ -1158,7 +1290,16 @@ TEST(BbrTest, GetNetworkStatisticsViaCongestionEvent)
 
 //
 // Test 19: CanSend with flow control unblocking
-// Scenario: When CanSend transitions from FALSE to TRUE, it unblocks flow control.
+//
+// What: Tests that BbrCongestionControlCanSend unblocks flow control when transitioning
+//       from blocked (FALSE) to unblocked (TRUE).
+// How: Fills BytesInFlight via 20x OnDataSent to block (CanSend=FALSE),
+//      sets OutFlowBlockedReasons flag, then reduces BytesInFlight via OnDataInvalidated,
+//      and verifies CanSend=TRUE and flow control flag cleared.
+// Asserts:
+//   - After filling window, CanSend = FALSE
+//   - After invalidating 15000 bytes, CanSend = TRUE
+//   - OutFlowBlockedReasons cleared (QUIC_FLOW_BLOCKED_CONGESTION_CONTROL bit = 0)
 //
 TEST(BbrTest, CanSendFlowControlUnblocking)
 {
@@ -1190,7 +1331,12 @@ TEST(BbrTest, CanSendFlowControlUnblocking)
 
 //
 // Test 20: ExitingQuiescence flag set
-// Scenario: When sending after being idle with BytesInFlight=0 and app-limited, set ExitingQuiescence.
+//
+// What: Tests that BBR sets ExitingQuiescence flag when resuming send after idle period.
+// How: Sets BBR to idle state (BytesInFlight=0, AppLimited=TRUE, ExitingQuiescence=FALSE),
+//      then calls OnDataSent to send 1200 bytes, and verifies ExitingQuiescence=TRUE.
+// Asserts:
+//   - ExitingQuiescence = TRUE after sending while idle and app-limited
 //
 TEST(BbrTest, ExitingQuiescenceOnSendAfterIdle)
 {
@@ -1217,7 +1363,14 @@ TEST(BbrTest, ExitingQuiescenceOnSendAfterIdle)
 
 //
 // Test 21: Recovery window growth during RECOVERY
-// Scenario: In recovery state, ACKs should update recovery window.
+//
+// What: Tests that BBR updates recovery window when processing ACKs during recovery.
+// How: Sends 5 packets (6000 bytes), triggers loss to enter recovery via OnDataLost,
+//      then processes ACK and verifies UpdateCwndOnAck is called (recovery state maintained).
+// Asserts:
+//   - After loss, RecoveryState != NOT_RECOVERY (0)
+//   - After ACK during recovery, still RecoveryState != 0
+//   - Recovery window update occurs internally (tested via state persistence)
 //
 TEST(BbrTest, RecoveryWindowUpdateOnAck)
 {
@@ -1276,7 +1429,17 @@ TEST(BbrTest, RecoveryWindowUpdateOnAck)
 
 //
 // Test 22: SetAppLimited success path
-// Scenario: When BytesInFlight is low, SetAppLimited succeeds.
+//
+// What: Tests BbrCongestionControlSetAppLimited when condition allows (BytesInFlight < CWND).
+// How: Sends only 1200 bytes (much less than CWND), sets LargestSentPacketNumber=42,
+//      calls SetAppLimited, and verifies:
+//      - AppLimited flag set to TRUE
+//      - AppLimitedExitTarget = 42
+//      - IsAppLimited returns TRUE
+// Asserts:
+//   - BandwidthFilter.AppLimited = TRUE
+//   - AppLimitedExitTarget = 42
+//   - IsAppLimited() = TRUE
 //
 TEST(BbrTest, SetAppLimitedSuccess)
 {
@@ -1314,7 +1477,13 @@ TEST(BbrTest, SetAppLimitedSuccess)
 
 //
 // Test 23: Zero-length packet handling in OnDataAcknowledged
-// Scenario: ACK event with packets that have PacketLength=0 should skip bandwidth update.
+//
+// What: Tests that BBR handles ACKs for zero-length packets correctly (skips bandwidth calc).
+// How: Creates packet metadata with PacketLength=0, includes it in ACK event,
+//      calls OnDataAcknowledged, and verifies no crash (line 132 skips zero-length packets).
+// Asserts:
+//   - No crash processing zero-length packet
+//   - ACK processed successfully
 //
 TEST(BbrTest, ZeroLengthPacketSkippedInBandwidthUpdate)
 {
@@ -1355,7 +1524,14 @@ TEST(BbrTest, ZeroLengthPacketSkippedInBandwidthUpdate)
 
 //
 // Test 24: Pacing with high bandwidth for send quantum tiers
-// Scenario: Send quantum varies based on pacing rate thresholds.
+//
+// What: Tests that BBR's SendQuantum is set correctly based on bandwidth tiers (lines 718-724).
+// How: Sends 10 packets over 5 rounds with 0.5ms spacing (simulates high bandwidth ~12 Mbps),
+//      10ms RTT, processes ACKs with packet metadata to establish bandwidth,
+//      and verifies SendQuantum is calculated and set (> 0).
+// Asserts:
+//   - SendQuantum > 0 after establishing high bandwidth
+//   - Pacing logic selects appropriate tier
 //
 TEST(BbrTest, PacingSendQuantumTiers)
 {
@@ -1439,7 +1615,14 @@ TEST(BbrTest, PacingSendQuantumTiers)
 
 //
 // Test 25: NetStatsEvent triggers GetNetworkStatistics and LogOutFlowStatus
-// Scenario: When NetStatsEventEnabled=TRUE, ACK processing calls stats functions.
+//
+// What: Tests that ACK processing with NetStatsEventEnabled=TRUE triggers:
+//       - BbrCongestionControlGetNetworkStatistics (line 787 via IndicateConnectionEvent)
+//       - BbrCongestionControlLogOutFlowStatus (via QuicCongestionControlLogOutFlowStatus)
+// How: Sets NetStatsEventEnabled=TRUE, sends 5 packets, creates ACK with metadata,
+//      processes ACK via OnDataAcknowledged, which internally calls stats functions.
+// Asserts:
+//   - ACK processed successfully (stats functions called internally)
 //
 TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
 {
@@ -1496,7 +1679,14 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
 
 //
 // Test 26: Persistent congestion resets to minimum window
-// Scenario: Loss event with PersistentCongestion=TRUE resets RecoveryWindow to minimum.
+//
+// What: Tests that OnDataLost with PersistentCongestion=TRUE resets RecoveryWindow (lines 948-956).
+// How: Sets NetStatsEventEnabled=TRUE (to cover line 899), sends 10 packets,
+//      triggers loss with PersistentCongestion=TRUE, and verifies:
+//      - RecoveryWindow reduced significantly (< 50% of initial)
+// Asserts:
+//   - RecoveryWindow < InitialRecoveryWindow after persistent congestion
+//   - RecoveryWindow < InitialRecoveryWindow / 2 (significant reduction)
 //
 TEST(BbrTest, PersistentCongestionResetsWindow)
 {
@@ -1537,7 +1727,13 @@ TEST(BbrTest, PersistentCongestionResetsWindow)
 
 //
 // Test 27: SetAppLimited when congestion-limited (early return)
-// Scenario: Calling SetAppLimited when BytesInFlight > CWND should return early.
+//
+// What: Tests that SetAppLimited returns early when BytesInFlight > CongestionWindow (line 989).
+// How: Fills BytesInFlight to exceed CWND (20 x 1200 bytes), ensures AppLimited=FALSE,
+//      calls SetAppLimited, and verifies it returns early without setting AppLimited flag.
+// Asserts:
+//   - BytesInFlight > CongestionWindow before call
+//   - AppLimited = FALSE after call (early return, not set)
 //
 TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
 {
@@ -1572,7 +1768,14 @@ TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
 
 //
 // Test 28: Recovery exit when ACKing packet >= EndOfRecovery
-// Scenario: Exit recovery state when acknowledging packet at or past EndOfRecovery.
+//
+// What: Tests BBR exits recovery when ACKing packet number >= EndOfRecovery (lines 826-827).
+// How: Sends 10 packets, triggers loss to enter recovery (captures EndOfRecovery value),
+//      then ACKs packet with LargestAck > EndOfRecovery and HasLoss=FALSE,
+//      and verifies RecoveryState returns to NOT_RECOVERY (0).
+// Asserts:
+//   - RecoveryState != 0 after loss (in recovery)
+//   - RecoveryState = 0 after ACKing past EndOfRecovery (exited recovery)
 //
 TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 {
@@ -1634,7 +1837,12 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 
 //
 // Test 29: Call GetBytesInFlightMax function pointer
-// Scenario: Tests the public API getter for BytesInFlightMax (lines 411-413).
+//
+// What: Tests BbrCongestionControlGetBytesInFlightMax public API (lines 411-413).
+// How: Initializes BBR, calls GetBytesInFlightMax via function pointer,
+//      verifies it returns a positive value representing max inflight bytes observed.
+// Asserts:
+//   - GetBytesInFlightMax() > 0
 //
 TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
 {
@@ -1653,7 +1861,13 @@ TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
 
 //
 // Test 30: Pacing disabled when setting is OFF
-// Scenario: Tests send allowance calculation without pacing (lines 636-642).
+//
+// What: Tests GetSendAllowance takes non-paced code path when pacing disabled (lines 636-646).
+// How: Initializes BBR with PacingEnabled=FALSE, sends 3 packets (3600 bytes),
+//      calls GetSendAllowance(0, FALSE), and verifies positive allowance returned
+//      (uses non-paced calculation path).
+// Asserts:
+//   - SendAllowance > 0 (allowance calculated via non-paced path)
 //
 TEST(BbrTest, SendAllowanceWithPacingDisabled)
 {
@@ -1680,7 +1894,14 @@ TEST(BbrTest, SendAllowanceWithPacingDisabled)
 
 //
 // Test 31: Implicit ACK with NetStatsEventEnabled triggers stats
-// Scenario: Tests the implicit ACK code path that updates stats (lines 782-789).
+//
+// What: Tests that implicit ACKs with NetStatsEventEnabled=TRUE trigger stats updates (lines 783-789).
+// How: Sets NetStatsEventEnabled=TRUE, sends 1200 bytes, creates ACK with IsImplicit=TRUE,
+//      processes ACK via OnDataAcknowledged, and verifies:
+//      - CWND updated for implicit ACK (lines 783-789)
+//      - No crash, state remains valid
+// Asserts:
+//   - CongestionWindow >= InitialCwnd (updated via implicit ACK path)
 //
 TEST(BbrTest, ImplicitAckTriggersNetStats)
 {
@@ -1722,8 +1943,18 @@ TEST(BbrTest, ImplicitAckTriggersNetStats)
 
 //
 // Test 32: Backwards timestamp and zero elapsed time in bandwidth calculation
-// Scenario: Tests edge cases in bandwidth estimation (lines 365-368, 580-586).
-// Observable: BBR handles clock anomalies gracefully without crashing.
+//
+// What: Tests BBR handles clock anomalies gracefully in bandwidth calculation (lines 365-368, 580-586).
+// How: Sends packets and ACKs with problematic timestamps:
+//      Step 1: Normal ACK to establish baseline
+//      Step 2: ACK with same timestamp (zero elapsed time) - tests line 365-368
+//      Step 3: ACK with backwards timestamp - tests line 580-586 with negative diff
+//      Verifies BBR doesn't crash and maintains valid state after each scenario.
+// Asserts:
+//   - No crash on zero elapsed time
+//   - No crash on backwards timestamp
+//   - CongestionWindow remains valid (0 < CWND < 1M) after both anomalies
+//   - CanSend() works without crashing
 //
 TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
 {
