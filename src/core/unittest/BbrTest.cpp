@@ -1523,7 +1523,7 @@ TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
 //
 
 //
-// Test: T3 - STARTUP → PROBE_RTT transition via RTT sample expiration
+// Test 29: T3 - STARTUP → PROBE_RTT transition via RTT sample expiration
 //
 // Scenario: BBR in STARTUP experiences RTT sample expiration (>10s old MinRtt),
 //           triggering a transition to PROBE_RTT to probe for lower RTT.
@@ -1546,7 +1546,8 @@ TEST(BbrTest, StateTransition_StartupToProbeRtt_RttExpired)
     ASSERT_TRUE(Bbr->RttSampleExpired); // Initially expired
 
     // Send and ACK to establish MinRtt
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, 1200);
 
     QUIC_ACK_EVENT AckEvent1 = {};
     AckEvent1.TimeNow = TimeNow;
@@ -1561,7 +1562,8 @@ TEST(BbrTest, StateTransition_StartupToProbeRtt_RttExpired)
     AckEvent1.HasLoss = FALSE;
     AckEvent1.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent1);
 
     // MinRtt should be set now
     ASSERT_EQ(Bbr->MinRtt, 50000ULL);
@@ -1571,7 +1573,8 @@ TEST(BbrTest, StateTransition_StartupToProbeRtt_RttExpired)
     TimeNow += 11000000;
 
     // Send another packet
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, 1200);
 
     // ACK with MinRttValid=TRUE but higher RTT - this triggers expiration check
     QUIC_ACK_EVENT AckEvent2 = {};
@@ -1587,14 +1590,15 @@ TEST(BbrTest, StateTransition_StartupToProbeRtt_RttExpired)
     AckEvent2.HasLoss = FALSE;
     AckEvent2.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent2);
 
     // Should transition to PROBE_RTT
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
 }
 
 //
-// Test: T3 - PROBE_BW → PROBE_RTT transition via RTT sample expiration
+// Test 30: T3 - PROBE_BW → PROBE_RTT transition via RTT sample expiration
 //
 // Scenario: BBR in PROBE_BW steady state experiences RTT expiration,
 //           transitions to PROBE_RTT to refresh MinRtt estimate.
@@ -1627,7 +1631,8 @@ TEST(BbrTest, StateTransition_ProbeBwToProbeRtt_RttExpired)
     TimeNow += 11000000;
 
     // Send and ACK with MinRttValid to trigger expiration check
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, 1200);
 
     QUIC_ACK_EVENT AckEvent = {};
     AckEvent.TimeNow = TimeNow;
@@ -1642,14 +1647,14 @@ TEST(BbrTest, StateTransition_ProbeBwToProbeRtt_RttExpired)
     AckEvent.HasLoss = FALSE;
     AckEvent.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
 
     // Should transition to PROBE_RTT
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
 }
 
-//
-// Test: T4 - PROBE_RTT → PROBE_BW transition after probe completion with BtlbwFound
+// Test 31: T4 - PROBE_RTT → PROBE_BW transition after probe completion with BtlbwFound
 //
 // Scenario: BBR in PROBE_RTT completes probe (low inflight for 200ms + round trip),
 //           then transitions back to PROBE_BW since bottleneck was found.
@@ -1689,7 +1694,8 @@ TEST(BbrTest, StateTransition_ProbeRttToProbeBw_ProbeComplete)
     AckEvent1.HasLoss = FALSE;
     AckEvent1.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent1);
 
     // Should set ProbeRttEndTime but not exit yet
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
@@ -1712,14 +1718,15 @@ TEST(BbrTest, StateTransition_ProbeRttToProbeBw_ProbeComplete)
     AckEvent2.HasLoss = FALSE;
     AckEvent2.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent2);
 
     // Should transition to PROBE_BW
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_BW);
 }
 
 //
-// Test: T5 - PROBE_RTT → STARTUP transition after probe completion without BtlbwFound
+// Test 32: T5 - PROBE_RTT → STARTUP transition after probe completion without BtlbwFound
 //
 // Scenario: BBR in PROBE_RTT completes probe but bottleneck bandwidth was never found,
 //           so it returns to STARTUP to re-probe for bandwidth.
@@ -1759,7 +1766,8 @@ TEST(BbrTest, StateTransition_ProbeRttToStartup_NoBottleneckFound)
     AckEvent1.HasLoss = FALSE;
     AckEvent1.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent1);
 
     // Should set ProbeRttEndTime but not exit yet
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
@@ -1782,14 +1790,15 @@ TEST(BbrTest, StateTransition_ProbeRttToStartup_NoBottleneckFound)
     AckEvent2.HasLoss = FALSE;
     AckEvent2.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent2);
 
     // Should transition to STARTUP (not PROBE_BW)
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_STARTUP);
 }
 
 //
-// Test: T3 - DRAIN → PROBE_RTT transition via RTT expiration
+// Test 33: T3 - DRAIN → PROBE_RTT transition via RTT expiration
 //
 // Scenario: BBR in DRAIN state experiences RTT sample expiration,
 //           transitions to PROBE_RTT before completing drain.
@@ -1816,8 +1825,9 @@ TEST(BbrTest, StateTransition_DrainToProbeRtt_RttExpired)
     Bbr->ExitingQuiescence = FALSE;
 
     // Send some data to have BytesInFlight
-    for (int i = 0; i < 10; i++) {
-        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+    for (int i = 0; i < 15; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(
+            &Connection.CongestionControl, 1200);
     }
 
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_DRAIN);
@@ -1839,7 +1849,8 @@ TEST(BbrTest, StateTransition_DrainToProbeRtt_RttExpired)
     AckEvent.HasLoss = FALSE;
     AckEvent.AckedPackets = NULL;
 
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
 
     // Should transition to PROBE_RTT (RTT expiration takes priority)
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
