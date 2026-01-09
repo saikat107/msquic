@@ -1594,8 +1594,8 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 //
 
 //
-// Scenario: Call GetBytesInFlightMax function pointer
-// Tests the public API getter for BytesInFlightMax (lines 411-413).
+// Test 29: Call GetBytesInFlightMax function pointer
+// Scenario: Tests the public API getter for BytesInFlightMax (lines 411-413).
 //
 TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
 {
@@ -1613,8 +1613,8 @@ TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
 }
 
 //
-// Scenario: Pacing disabled when setting is OFF
-// Tests send allowance calculation without pacing (lines 636-642).
+// Test 30: Pacing disabled when setting is OFF
+// Scenario: Tests send allowance calculation without pacing (lines 636-642).
 //
 TEST(BbrTest, SendAllowanceWithPacingDisabled)
 {
@@ -1640,8 +1640,8 @@ TEST(BbrTest, SendAllowanceWithPacingDisabled)
 }
 
 //
-// Scenario: Implicit ACK with NetStatsEventEnabled triggers stats
-// Tests the implicit ACK code path that updates stats (lines 782-789).
+// Test 31: Implicit ACK with NetStatsEventEnabled triggers stats
+// Scenario: Tests the implicit ACK code path that updates stats (lines 782-789).
 //
 TEST(BbrTest, ImplicitAckTriggersNetStats)
 {
@@ -1682,8 +1682,8 @@ TEST(BbrTest, ImplicitAckTriggersNetStats)
 }
 
 //
-// Scenario: Backwards timestamp and zero elapsed time in bandwidth calculation
-// Tests edge cases in bandwidth estimation (lines 365-368, 580-586).
+// Test 32: Backwards timestamp and zero elapsed time in bandwidth calculation
+// Scenario: Tests edge cases in bandwidth estimation (lines 365-368, 580-586).
 // Observable: BBR handles clock anomalies gracefully without crashing.
 //
 TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
