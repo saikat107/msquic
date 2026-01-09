@@ -614,482 +614,14 @@ TEST(BbrTest, OnDataAcknowledgedBasic)
 
 //
 // ============================================================================
-// CATEGORY 5: BBR STATE MACHINE TRANSITION TESTS
+//
+// ============================================================================
+// CATEGORY 5: PACING AND SEND ALLOWANCE TESTS
 // ============================================================================
 //
 
 //
-// Test 12: Bandwidth plateau detection triggers STARTUP exit
-//
-// Scenario: Network link reaches bandwidth plateau during connection startup.
-//           BBR detects stalled bandwidth growth and exits aggressive STARTUP mode.
-//
-// What: Tests BBR's bandwidth discovery completion behavior.
-// How: Simulates real network scenario where:
-//      - Connection starts sending data (STARTUP mode)
-//      - Network delivers consistent throughput (no growth)
-//      - BBR detects plateau after observing stable bandwidth
-// Asserts:
-//   - Bandwidth discovery flag transitions from FALSE → TRUE
-//   - State exits STARTUP (observable via behavior change: reduced aggressiveness)
-//
-TEST(BbrTest, BandwidthPlateauDetection)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-
-    Settings.InitialWindowPackets = 10;
-    InitializeMockConnection(Connection, 1280);
-    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    uint64_t TimeNow = 0;
-    uint64_t PacketNum = 0;
-    uint64_t TotalBytesSent = 0;
-
-    // Observe initial behavior: aggressive growth phase
-    ASSERT_FALSE(Bbr->BtlbwFound);
-    uint32_t InitialCwnd = Bbr->CongestionWindow;
-
-    // Simulate network reaching plateau: consistent bandwidth over multiple RTTs
-    uint64_t LastAckedSentTime = 0;
-    uint64_t LastAckedTotalBytesSent = 0;
-    uint64_t LastAckedAckTime = 0;
-    uint64_t LastAckedTotalBytesAcked = 0;
-
-    // Send/ACK data over several round trips with stable bandwidth
-    for (int round = 0; round < 4; round++) {
-        QUIC_SENT_PACKET_METADATA* PacketArray[5];
-        uint64_t PacketSendTime = TimeNow;
-
-        // Send batch of packets
-        for (int i = 0; i < 5; i++) {
-            uint32_t PacketSize = 1200;
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            TotalBytesSent += PacketSize;
-
-            // Attach bandwidth estimation metadata (simulates real ACK feedback)
-            if (round > 0 || i > 0) {
-                PacketArray[i] = AllocPacketMetadata(
-                    ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
-                    TRUE, LastAckedSentTime, LastAckedTotalBytesSent,
-                    LastAckedAckTime, LastAckedTotalBytesAcked);
-            } else {
-                PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
-            }
-            ASSERT_NE(PacketArray[i], nullptr);
-            if (i > 0) PacketArray[i]->Next = PacketArray[i-1];
-            PacketSendTime += 1000;
-        }
-
-        TimeNow += 50000; // One RTT
-
-        // Network delivers ACKs with consistent bandwidth
-        QUIC_ACK_EVENT AckEvent = {};
-        AckEvent.TimeNow = TimeNow;
-        AckEvent.AdjustedAckTime = TimeNow;
-        AckEvent.LargestAck = PacketNum;
-        AckEvent.LargestSentPacketNumber = PacketNum;
-        AckEvent.NumRetransmittableBytes = 6000;
-        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
-        AckEvent.MinRttValid = TRUE;
-        AckEvent.MinRtt = 50000;
-        AckEvent.AckedPackets = PacketArray[4];
-
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-
-        LastAckedSentTime = PacketSendTime - 1000;
-        LastAckedTotalBytesSent = TotalBytesSent;
-        LastAckedAckTime = TimeNow;
-        LastAckedTotalBytesAcked = TotalBytesSent;
-
-        for (int i = 0; i < 5; i++) {
-            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
-        }
-    }
-
-    // Observe behavior change: BBR detected plateau and changed strategy
-    ASSERT_TRUE(Bbr->BtlbwFound); // Bandwidth discovery completed
-    ASSERT_TRUE(Bbr->BbrState != BBR_STATE_STARTUP); // Exited aggressive phase
-}
-
-//
-// Test 13: Connection stabilization after bandwidth discovery
-//
-// Scenario: After discovering network bandwidth, BBR stabilizes into steady-state operation.
-//           Excess inflight data drains, congestion window stabilizes around BDP.
-//
-// What: Tests BBR's transition to stable bandwidth-probing mode.
-// How: Simulates post-discovery behavior:
-//      - Complete bandwidth discovery phase
-//      - Allow inflight bytes to stabilize
-//      - Observe steady-state congestion control behavior
-// Asserts:
-//   - Bandwidth discovery is complete (BtlbwFound = TRUE)
-//   - Connection enters steady-state probing mode
-//   - Congestion window remains stable (not growing aggressively)
-//
-TEST(BbrTest, SteadyStateAfterDiscovery)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-
-    Settings.InitialWindowPackets = 10;
-    InitializeMockConnection(Connection, 1280);
-    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    uint64_t TimeNow = 0;
-    uint64_t PacketNum = 0;
-    uint64_t TotalBytesSent = 0;
-
-    // Phase 1: Complete bandwidth discovery
-    uint64_t LastAckedSentTime = 0;
-    uint64_t LastAckedTotalBytesSent = 0;
-    uint64_t LastAckedAckTime = 0;
-    uint64_t LastAckedTotalBytesAcked = 0;
-
-    for (int round = 0; round < 4; round++) {
-        QUIC_SENT_PACKET_METADATA* PacketArray[5];
-        uint64_t PacketSendTime = TimeNow;
-
-        for (int i = 0; i < 5; i++) {
-            uint32_t PacketSize = 1200;
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            TotalBytesSent += PacketSize;
-
-            if (round > 0 || i > 0) {
-                PacketArray[i] = AllocPacketMetadata(
-                    ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
-                    TRUE, LastAckedSentTime, LastAckedTotalBytesSent,
-                    LastAckedAckTime, LastAckedTotalBytesAcked);
-            } else {
-                PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
-            }
-            ASSERT_NE(PacketArray[i], nullptr);
-            if (i > 0) PacketArray[i]->Next = PacketArray[i-1];
-            PacketSendTime += 1000;
-        }
-
-        TimeNow += 50000;
-
-        QUIC_ACK_EVENT AckEvent = {};
-        AckEvent.TimeNow = TimeNow;
-        AckEvent.AdjustedAckTime = TimeNow;
-        AckEvent.LargestAck = PacketNum;
-        AckEvent.LargestSentPacketNumber = PacketNum;
-        AckEvent.NumRetransmittableBytes = 6000;
-        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
-        AckEvent.MinRttValid = TRUE;
-        AckEvent.MinRtt = 50000;
-        AckEvent.AckedPackets = PacketArray[4];
-
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-
-        LastAckedSentTime = PacketSendTime - 1000;
-        LastAckedTotalBytesSent = TotalBytesSent;
-        LastAckedAckTime = TimeNow;
-        LastAckedTotalBytesAcked = TotalBytesSent;
-
-        for (int i = 0; i < 5; i++) {
-            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
-        }
-    }
-
-    ASSERT_TRUE(Bbr->BtlbwFound); // Discovery completed
-
-    // Phase 2: Allow stabilization (ACK any remaining inflight)
-    TimeNow += 50000;
-    uint32_t RemainingBytes = Bbr->BytesInFlight;
-    if (RemainingBytes > 0) {
-        QUIC_ACK_EVENT DrainAck = {};
-        DrainAck.TimeNow = TimeNow;
-        DrainAck.AdjustedAckTime = TimeNow;
-        DrainAck.LargestAck = PacketNum + 1;
-        DrainAck.LargestSentPacketNumber = PacketNum + 1;
-        DrainAck.NumRetransmittableBytes = RemainingBytes;
-        DrainAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + RemainingBytes;
-        DrainAck.MinRttValid = TRUE;
-        DrainAck.MinRtt = 50000;
-
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
-    }
-
-    // Observe steady-state behavior
-    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_BW);
-    ASSERT_TRUE(Bbr->BtlbwFound);
-    
-    // Window should be stable, not aggressively growing
-    uint32_t StableCwnd = Bbr->CongestionWindow;
-    
-    // Send one more round and verify stability
-    TimeNow += 50000;
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-    
-    QUIC_ACK_EVENT StableAck = {};
-    StableAck.TimeNow = TimeNow;
-    StableAck.NumRetransmittableBytes = 1200;
-    StableAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + RemainingBytes + 1200;
-    StableAck.MinRttValid = TRUE;
-    StableAck.MinRtt = 50000;
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &StableAck);
-    
-    // Window should remain relatively stable (within 2x range, not doubling like STARTUP)
-    ASSERT_LT(Bbr->CongestionWindow, StableCwnd * 2);
-}
-
-//
-// Test 14: Periodic RTT probing for path changes
-//
-// Scenario: Long-lived connection needs to detect if network path RTT has decreased.
-//           BBR periodically probes for lower RTT by reducing congestion window.
-//
-// What: Tests BBR's RTT probing behavior triggered by stale RTT measurements.
-// How: Simulates long-running connection:
-//      - Establish stable bandwidth-probing mode
-//      - Advance time beyond RTT probe interval (10 seconds)
-//      - Send/ACK data to trigger RTT probe
-// Asserts:
-//   - Initially NOT in RTT probe mode
-//   - After 10+ seconds, RTT probe is triggered
-//   - Connection enters RTT-probing state to measure fresh RTT
-//
-TEST(BbrTest, PeriodicRttProbing)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-
-    Settings.InitialWindowPackets = 10;
-    InitializeMockConnection(Connection, 1280);
-    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    uint64_t TimeNow = 0;
-    uint64_t PacketNum = 0;
-    uint64_t TotalBytesSent = 0;
-
-    // Phase 1: Establish stable PROBE_BW mode
-    uint64_t LastAckedSentTime = 0;
-    uint64_t LastAckedTotalBytesSent = 0;
-    uint64_t LastAckedAckTime = 0;
-    uint64_t LastAckedTotalBytesAcked = 0;
-
-    for (int round = 0; round < 4; round++) {
-        QUIC_SENT_PACKET_METADATA* PacketArray[5];
-        uint64_t PacketSendTime = TimeNow;
-
-        for (int i = 0; i < 5; i++) {
-            uint32_t PacketSize = 1200;
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            TotalBytesSent += PacketSize;
-
-            if (round > 0 || i > 0) {
-                PacketArray[i] = AllocPacketMetadata(
-                    ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
-                    TRUE, LastAckedSentTime, LastAckedTotalBytesSent,
-                    LastAckedAckTime, LastAckedTotalBytesAcked);
-            } else {
-                PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
-            }
-            ASSERT_NE(PacketArray[i], nullptr);
-            if (i > 0) PacketArray[i]->Next = PacketArray[i-1];
-            PacketSendTime += 1000;
-        }
-
-        TimeNow += 50000;
-
-        QUIC_ACK_EVENT AckEvent = {};
-        AckEvent.TimeNow = TimeNow;
-        AckEvent.AdjustedAckTime = TimeNow;
-        AckEvent.LargestAck = PacketNum;
-        AckEvent.LargestSentPacketNumber = PacketNum;
-        AckEvent.NumRetransmittableBytes = 6000;
-        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
-        AckEvent.MinRttValid = TRUE;
-        AckEvent.MinRtt = 50000;
-        AckEvent.AckedPackets = PacketArray[4];
-
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-
-        LastAckedSentTime = PacketSendTime - 1000;
-        LastAckedTotalBytesSent = TotalBytesSent;
-        LastAckedAckTime = TimeNow;
-        LastAckedTotalBytesAcked = TotalBytesSent;
-
-        for (int i = 0; i < 5; i++) {
-            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
-        }
-    }
-
-    ASSERT_TRUE(Bbr->BtlbwFound);
-    ASSERT_NE(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_RTT); // Not probing yet
-
-    // Phase 2: Advance time beyond RTT probe interval (10 seconds)
-    TimeNow += 11000000; // 11 seconds
-
-    // Send new data to trigger probe check
-    PacketNum++;
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-    TotalBytesSent += 1200;
-
-    // ACK triggers RTT probe evaluation
-    QUIC_ACK_EVENT ProbeAck = {};
-    ProbeAck.TimeNow = TimeNow;
-    ProbeAck.AdjustedAckTime = TimeNow;
-    ProbeAck.LargestAck = PacketNum;
-    ProbeAck.LargestSentPacketNumber = PacketNum;
-    ProbeAck.NumRetransmittableBytes = 1200;
-    ProbeAck.NumTotalAckedRetransmittableBytes = TotalBytesSent;
-    ProbeAck.MinRttValid = TRUE;
-    ProbeAck.MinRtt = 50000;
-
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &ProbeAck);
-
-    // Observe RTT probing triggered
-    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_RTT);
-}
-
-//
-// Test 15: RTT probe completion and return to bandwidth probing
-//
-// Scenario: After measuring fresh RTT, BBR exits probe mode and resumes bandwidth probing.
-//
-// What: Tests BBR's exit from RTT probe back to steady-state operation.
-// How: Simulates complete RTT probe cycle:
-//      - Trigger RTT probe via stale measurements
-//      - Maintain low inflight for probe duration (200ms)
-//      - Complete round trip with fresh RTT measurement
-//      - Observe return to bandwidth-probing mode
-// Asserts:
-//   - Enters PROBE_RTT state
-//   - After probe duration + round trip, exits PROBE_RTT
-//   - Returns to PROBE_BW steady-state mode
-//
-TEST(BbrTest, RttProbeCompletion)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-
-    Settings.InitialWindowPackets = 10;
-    InitializeMockConnection(Connection, 1280);
-    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
-    uint64_t TimeNow = 100000;
-    uint64_t PacketNum = 0;
-    uint64_t TotalBytesSent = 0;
-
-    // Phase 1: Establish PROBE_BW
-    uint64_t LastAckedSentTime = 0;
-    uint64_t LastAckedTotalBytesSent = 0;
-    uint64_t LastAckedAckTime = 0;
-    uint64_t LastAckedTotalBytesAcked = 0;
-
-    for (int round = 0; round < 4; round++) {
-        QUIC_SENT_PACKET_METADATA* PacketArray[3];
-        uint64_t PacketSendTime = TimeNow;
-
-        for (int i = 0; i < 3; i++) {
-            uint32_t PacketSize = 1200;
-            Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, PacketSize);
-            TotalBytesSent += PacketSize;
-
-            if (round > 0 || i > 0) {
-                PacketArray[i] = AllocPacketMetadata(
-                    ++PacketNum, PacketSize, PacketSendTime, TotalBytesSent,
-                    TRUE, LastAckedSentTime, LastAckedTotalBytesSent,
-                    LastAckedAckTime, LastAckedTotalBytesAcked);
-            } else {
-                PacketArray[i] = AllocPacketMetadata(++PacketNum, PacketSize, PacketSendTime, TotalBytesSent);
-            }
-            ASSERT_NE(PacketArray[i], nullptr);
-            if (i > 0) PacketArray[i]->Next = PacketArray[i-1];
-            PacketSendTime += 1000;
-        }
-        TimeNow += 50000;
-
-        QUIC_ACK_EVENT AckEvent = {};
-        AckEvent.TimeNow = TimeNow;
-        AckEvent.AdjustedAckTime = TimeNow;
-        AckEvent.LargestAck = PacketNum;
-        AckEvent.LargestSentPacketNumber = PacketNum;
-        AckEvent.NumRetransmittableBytes = 3600;
-        AckEvent.NumTotalAckedRetransmittableBytes = TotalBytesSent;
-        AckEvent.MinRttValid = TRUE;
-        AckEvent.MinRtt = 50000;
-        AckEvent.AckedPackets = PacketArray[2];
-
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
-
-        LastAckedSentTime = PacketSendTime - 1000;
-        LastAckedTotalBytesSent = TotalBytesSent;
-        LastAckedAckTime = TimeNow;
-        LastAckedTotalBytesAcked = TotalBytesSent;
-
-        for (int i = 0; i < 3; i++) {
-            CXPLAT_FREE(PacketArray[i], QUIC_POOL_TEST);
-        }
-    }
-
-    // Stabilize
-    TimeNow += 50000;
-    uint32_t RemainingBytes = Bbr->BytesInFlight;
-    if (RemainingBytes > 0) {
-        QUIC_ACK_EVENT DrainAck = {};
-        DrainAck.TimeNow = TimeNow;
-        DrainAck.NumRetransmittableBytes = RemainingBytes;
-        DrainAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + RemainingBytes;
-        DrainAck.MinRttValid = TRUE;
-        DrainAck.MinRtt = 50000;
-        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
-    }
-
-    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_BW);
-    ASSERT_TRUE(Bbr->BtlbwFound);
-
-    // Phase 2: Trigger RTT probe
-    TimeNow += 10100000; // >10 seconds
-    PacketNum += 2;
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
-
-    QUIC_ACK_EVENT ExpireAck = {};
-    ExpireAck.TimeNow = TimeNow;
-    ExpireAck.LargestAck = PacketNum;
-    ExpireAck.LargestSentPacketNumber = PacketNum;
-    ExpireAck.NumRetransmittableBytes = 1200;
-    ExpireAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + 1200;
-    ExpireAck.MinRttValid = TRUE;
-    ExpireAck.MinRtt = 50000;
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &ExpireAck);
-
-    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_RTT);
-
-    // Phase 3: Complete probe (200ms+ with low flight)
-    TimeNow += 250000;
-    PacketNum++;
-
-    QUIC_ACK_EVENT ProbeAck = {};
-    ProbeAck.TimeNow = TimeNow;
-    ProbeAck.LargestAck = PacketNum;
-    ProbeAck.LargestSentPacketNumber = PacketNum;
-    ProbeAck.NumRetransmittableBytes = 0;
-    ProbeAck.NumTotalAckedRetransmittableBytes = TotalBytesSent + 1200;
-    ProbeAck.MinRttValid = TRUE;
-    ProbeAck.MinRtt = 50000;
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &ProbeAck);
-
-    // Observe return to bandwidth probing
-    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_BW);
-}
-
-//
-// ============================================================================
-// CATEGORY 6: PACING AND SEND ALLOWANCE TESTS
-// ============================================================================
-//
-
-//
-// Test 16: GetSendAllowance with pacing disabled
+// Test 12: GetSendAllowance with pacing disabled
 //
 // What: Tests BbrCongestionControlGetSendAllowance when pacing is disabled.
 // How: Initializes BBR with PacingEnabled=FALSE, sends half the window,
@@ -1125,7 +657,7 @@ TEST(BbrTest, GetSendAllowanceNoPacing)
 }
 
 //
-// Test 17: GetSendAllowance with pacing enabled
+// Test 13: GetSendAllowance with pacing enabled
 //
 // What: Tests BbrCongestionControlGetSendAllowance when pacing is enabled and RTT is known.
 // How: Initializes BBR with PacingEnabled=TRUE and SmoothedRtt=50ms,
@@ -1195,7 +727,7 @@ TEST(BbrTest, GetSendAllowanceWithPacing)
 //
 
 //
-// Test 18: GetNetworkStatistics through callback
+// Test 14: GetNetworkStatistics through callback
 //
 // What: Documents that BbrCongestionControlGetNetworkStatistics is tested indirectly.
 // How: GetNetworkStatistics is called internally during OnDataAcknowledged when
@@ -1224,7 +756,7 @@ TEST(BbrTest, GetNetworkStatisticsViaCongestionEvent)
 }
 
 //
-// Test 19: CanSend with flow control unblocking
+// Test 15: CanSend with flow control unblocking
 //
 // What: Tests that BbrCongestionControlCanSend unblocks flow control when transitioning
 //       from blocked (FALSE) to unblocked (TRUE).
@@ -1265,7 +797,7 @@ TEST(BbrTest, CanSendFlowControlUnblocking)
 }
 
 //
-// Test 20: ExitingQuiescence flag set
+// Test 16: ExitingQuiescence flag set
 //
 // What: Tests that BBR sets ExitingQuiescence flag when resuming send after idle period.
 // How: Sets BBR to idle state (BytesInFlight=0, AppLimited=TRUE, ExitingQuiescence=FALSE),
@@ -1297,7 +829,7 @@ TEST(BbrTest, ExitingQuiescenceOnSendAfterIdle)
 }
 
 //
-// Test 21: Recovery window growth during RECOVERY
+// Test 17: Recovery window growth during RECOVERY
 //
 // What: Tests that BBR updates recovery window when processing ACKs during recovery.
 // How: Sends 5 packets (6000 bytes), triggers loss to enter recovery via OnDataLost,
@@ -1363,7 +895,7 @@ TEST(BbrTest, RecoveryWindowUpdateOnAck)
 //
 
 //
-// Test 22: SetAppLimited success path
+// Test 18: SetAppLimited success path
 //
 // What: Tests BbrCongestionControlSetAppLimited when condition allows (BytesInFlight < CWND).
 // How: Sends only 1200 bytes (much less than CWND), sets LargestSentPacketNumber=42,
@@ -1406,12 +938,12 @@ TEST(BbrTest, SetAppLimitedSuccess)
 
 //
 // ============================================================================
-// CATEGORY 9: EDGE CASES AND ERROR HANDLING TESTS
+// CATEGORY 7: EDGE CASES AND ERROR HANDLING TESTS
 // ============================================================================
 //
 
 //
-// Test 23: Zero-length packet handling in OnDataAcknowledged
+// Test 19: Zero-length packet handling in OnDataAcknowledged
 //
 // What: Tests that BBR handles ACKs for zero-length packets correctly (skips bandwidth calc).
 // How: Creates packet metadata with PacketLength=0, includes it in ACK event,
@@ -1458,7 +990,7 @@ TEST(BbrTest, ZeroLengthPacketSkippedInBandwidthUpdate)
 }
 
 //
-// Test 24: Pacing with high bandwidth for send quantum tiers
+// Test 20: Pacing with high bandwidth for send quantum tiers
 //
 // What: Tests that BBR's SendQuantum is set correctly based on bandwidth tiers.
 // How: Sends 10 packets over 5 rounds with 0.5ms spacing (simulates high bandwidth ~12 Mbps),
@@ -1549,7 +1081,7 @@ TEST(BbrTest, PacingSendQuantumTiers)
 }
 
 //
-// Test 25: NetStatsEvent triggers GetNetworkStatistics and LogOutFlowStatus
+// Test 21: NetStatsEvent triggers GetNetworkStatistics and LogOutFlowStatus
 //
 // What: Tests that ACK processing with NetStatsEventEnabled=TRUE triggers:
 //       - BbrCongestionControlGetNetworkStatistics
@@ -1613,7 +1145,7 @@ TEST(BbrTest, NetStatsEventTriggersStatsFunctions)
 }
 
 //
-// Test 26: Persistent congestion resets to minimum window
+// Test 22: Persistent congestion resets to minimum window
 //
 // What: Tests that OnDataLost with PersistentCongestion=TRUE resets RecoveryWindow.
 // How: Sets NetStatsEventEnabled=TRUE sends 10 packets,
@@ -1660,7 +1192,7 @@ TEST(BbrTest, PersistentCongestionResetsWindow)
 }
 
 //
-// Test 27: SetAppLimited when congestion-limited (early return)
+// Test 23: SetAppLimited when congestion-limited (early return)
 //
 // What: Tests that SetAppLimited returns early when BytesInFlight > CongestionWindow.
 // How: Fills BytesInFlight to exceed CWND (20 x 1200 bytes), ensures AppLimited=FALSE,
@@ -1701,7 +1233,7 @@ TEST(BbrTest, SetAppLimitedWhenCongestionLimited)
 }
 
 //
-// Test 28: Recovery exit when ACKing packet >= EndOfRecovery
+// Test 24: Recovery exit when ACKing packet >= EndOfRecovery
 //
 // What: Tests BBR exits recovery when ACKing packet number >= EndOfRecovery.
 // How: Sends 10 packets, triggers loss to enter recovery (captures EndOfRecovery value),
@@ -1765,12 +1297,12 @@ TEST(BbrTest, RecoveryExitOnEndOfRecoveryAck)
 
 //
 // ============================================================================
-// CATEGORY 10: PUBLIC API COVERAGE TESTS
+// CATEGORY 6: PUBLIC API COVERAGE TESTS
 // ============================================================================
 //
 
 //
-// Test 29: Call GetBytesInFlightMax function pointer
+// Test 25: Call GetBytesInFlightMax function pointer
 //
 // What: Tests BbrCongestionControlGetBytesInFlightMax public API.
 // How: Initializes BBR, calls GetBytesInFlightMax via function pointer,
@@ -1794,7 +1326,7 @@ TEST(BbrTest, GetBytesInFlightMaxPublicAPI)
 }
 
 //
-// Test 30: Pacing disabled when setting is OFF
+// Test 26: Pacing disabled when setting is OFF
 //
 // What: Tests GetSendAllowance takes non-paced code path when pacing disabled.
 // How: Initializes BBR with PacingEnabled=FALSE, sends 3 packets (3600 bytes),
@@ -1827,7 +1359,7 @@ TEST(BbrTest, SendAllowanceWithPacingDisabled)
 }
 
 //
-// Test 31: Implicit ACK with NetStatsEventEnabled triggers stats
+// Test 27: Implicit ACK with NetStatsEventEnabled triggers stats
 //
 // What: Tests that implicit ACKs with NetStatsEventEnabled=TRUE trigger stats updates.
 // How: Sets NetStatsEventEnabled=TRUE, sends 1200 bytes, creates ACK with IsImplicit=TRUE,
@@ -1876,7 +1408,7 @@ TEST(BbrTest, ImplicitAckTriggersNetStats)
 }
 
 //
-// Test 32: Backwards timestamp and zero elapsed time in bandwidth calculation
+// Test 28: Backwards timestamp and zero elapsed time in bandwidth calculation
 //
 // What: Tests BBR handles clock anomalies gracefully in bandwidth calculation.
 // How: Sends packets and ACKs with problematic timestamps:
