@@ -14,6 +14,14 @@ Abstract:
 #include "BbrTest.cpp.clog.h"
 #endif
 
+// BBR state machine enum (from bbr.c)
+enum BBR_STATE {
+    BBR_STATE_STARTUP = 0,
+    BBR_STATE_DRAIN = 1,
+    BBR_STATE_PROBE_BW = 2,
+    BBR_STATE_PROBE_RTT = 3
+};
+
 //
 // Helper to create a minimal valid connection for testing BBR initialization.
 // Uses a real QUIC_CONNECTION structure to ensure proper memory layout when
@@ -608,7 +616,16 @@ TEST(BbrTest, StateTransitionStartupToDrain)
 
 //
 // Test 13: State transition DRAIN → PROBE_BW
-// Scenario: After entering DRAIN, drain inflight bytes to target then transition to PROBE_BW.
+//
+// What: Tests BBR's transition from DRAIN (1) to PROBE_BW (2) state after draining excess inflight bytes.
+// How: Sends packets over multiple rounds with consistent bandwidth to:
+//      1. Establish BtlbwFound (triggering STARTUP→DRAIN)
+//      2. ACK remaining inflight bytes to complete draining
+//      3. Transition to PROBE_BW steady-state operation
+// Asserts:
+//   - Verifies BtlbwFound flag is TRUE after bandwidth discovery
+//   - Confirms state transitions to DRAIN (BBR_STATE_DRAIN=1) or PROBE_BW (BBR_STATE_PROBE_BW=2)
+//   - Validates final state is PROBE_BW (BBR_STATE_PROBE_BW=2) after draining completes
 //
 TEST(BbrTest, StateTransitionDrainToProbeBw)
 {
@@ -687,7 +704,7 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
     }
 
     // Should be in DRAIN or already in PROBE_BW
-    ASSERT_TRUE(Bbr->BbrState == 1u || Bbr->BbrState == 2u);
+    ASSERT_TRUE(Bbr->BbrState == BBR_STATE_DRAIN || Bbr->BbrState == BBR_STATE_PROBE_BW);
 
     // Now drain by ACKing remaining inflight bytes if any
     TimeNow += 50000;
@@ -712,13 +729,22 @@ TEST(BbrTest, StateTransitionDrainToProbeBw)
     }
 
     // Should transition to or already be in PROBE_BW
-    ASSERT_EQ(Bbr->BbrState, 2u); // BBR_STATE_PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_BW);
     ASSERT_TRUE(Bbr->BtlbwFound);
 }
 
 //
 // Test 14: State transition to PROBE_RTT due to RTT expiration
-// Scenario: Simulate RTT sample expiration (10 seconds) to force PROBE_RTT from PROBE_BW.
+//
+// What: Tests BBR's transition from PROBE_BW (2) to PROBE_RTT (3) when RTT sample ages beyond 10 seconds.
+// How: 
+//      1. Establishes PROBE_BW state through bandwidth discovery (send/ACK over multiple rounds)
+//      2. Waits >10 seconds (RTT expiration threshold: QUIC_BBR_RTPROP_FILTER_LEN_US = 10,000,000 us)
+//      3. Sends/ACKs new packet to trigger RTT expiration check
+// Asserts:
+//   - Verifies BtlbwFound is TRUE after bandwidth discovery
+//   - Confirms NOT in PROBE_RTT before expiration
+//   - Validates state is PROBE_RTT (BBR_STATE_PROBE_RTT=3) after 10+ second wait
 //
 TEST(BbrTest, StateTransitionToProbRtt)
 {
@@ -818,7 +844,7 @@ TEST(BbrTest, StateTransitionToProbRtt)
     }
 
     ASSERT_TRUE(Bbr->BtlbwFound);
-    ASSERT_NE(Bbr->BbrState, (uint8_t)3); // Not in PROBE_RTT yet
+    ASSERT_NE(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_RTT); // Not in PROBE_RTT yet
 
     // Now wait 10+ seconds and send/ACK to trigger RTT expiration
     TimeNow += 10100000; // > 10 seconds
@@ -843,12 +869,25 @@ TEST(BbrTest, StateTransitionToProbRtt)
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &ExpiredAck);
 
     // Should transition to PROBE_RTT
-    ASSERT_EQ(Bbr->BbrState, 3u); // BBR_STATE_PROBE_RTT
+    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_RTT);
 }
 
 //
 // Test 15: PROBE_RTT exit back to PROBE_BW
-// Scenario: Complete PROBE_RTT (stay 200ms + 1 RTT) with bottleneck found, return to PROBE_BW.
+//
+// What: Tests BBR's exit from PROBE_RTT (3) back to PROBE_BW (2) after completing RTT probing.
+// How:
+//      1. Establishes PROBE_BW state through bandwidth discovery
+//      2. Forces transition to PROBE_RTT via RTT expiration (wait >10 seconds)
+//      3. Completes PROBE_RTT requirements:
+//         - Stays 200ms+ in PROBE_RTT (QUIC_BBR_PROBE_RTT_LEN_US = 200,000 us)
+//         - Completes a full round-trip with low flight
+//      4. Transitions back to PROBE_BW (since BtlbwFound=TRUE)
+// Asserts:
+//   - Verifies state is PROBE_BW (BBR_STATE_PROBE_BW=2) after initial discovery
+//   - Confirms BtlbwFound is TRUE
+//   - Validates transition to PROBE_RTT (BBR_STATE_PROBE_RTT=3) after expiration
+//   - Asserts exit back to PROBE_BW (BBR_STATE_PROBE_BW=2) after 200ms+ probing
 //
 TEST(BbrTest, ProbeRttExitToProbeBw)
 {
@@ -946,7 +985,7 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
         Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &DrainAck);
     }
 
-    ASSERT_EQ(Bbr->BbrState, 2u); // PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_BW); // PROBE_BW
     ASSERT_TRUE(Bbr->BtlbwFound);
 
     // Now expire RTT to enter PROBE_RTT
@@ -971,7 +1010,7 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
 
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &ExpireAck);
 
-    ASSERT_EQ(Bbr->BbrState, 3u); // PROBE_RTT
+    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_RTT); // PROBE_RTT
 
     // Now complete PROBE_RTT: stay 200ms+ with low flight and complete a round
     TimeNow += 250000; // 250ms later
@@ -995,7 +1034,7 @@ TEST(BbrTest, ProbeRttExitToProbeBw)
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &ProbeAck1);
 
     // Should exit PROBE_RTT back to PROBE_BW (since BtlbwFound = TRUE)
-    ASSERT_EQ(Bbr->BbrState, 2u); // PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, (uint8_t)BBR_STATE_PROBE_BW); // PROBE_BW
 }
 
 //
