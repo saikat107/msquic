@@ -16,6 +16,7 @@
 | **Skipped Tests** | 0 |
 | **Line Coverage** | **97.73%** (473/484 lines) |
 | **Uncovered Lines** | 11 |
+| **State Transition Tests** | 5 |
 
 ---
 
@@ -34,18 +35,18 @@ Coverage:         97.73%
 
 Based on test organization, coverage is distributed across:
 
-1. **Initialization and Reset** (Tests 1-6): Full coverage
-2. **Data Tracking** (Tests 7-10): Full coverage
-3. **Congestion Control Mechanics** (Tests 11-18): High coverage
-4. **Pacing and Send Control** (Tests 19-22): High coverage
-5. **Edge Cases and Robustness** (Tests 23-28): High coverage
-6. **State Transitions** (Tests 29-33): Partial coverage (3/5 transitions testable)
+1. **Initialization and Reset** (Tests 1-4): Full coverage
+2. **Data Tracking** (Tests 5-8): Full coverage
+3. **Congestion Control Mechanics** (Tests 9-16): High coverage
+4. **Pacing and Send Control** (Tests 17-20): High coverage
+5. **Edge Cases and Robustness** (Tests 21-28): High coverage
+6. **State Transitions** (Tests 29-33): **All 5 transitions tested**
 
 ---
 
 ## Test Inventory
 
-### Category 1: Initialization and Reset (6 tests)
+### Category 1: Initialization and Reset (4 tests)
 
 | # | Test Name | Status | Purpose |
 |---|-----------|--------|---------|
@@ -98,21 +99,23 @@ Based on test organization, coverage is distributed across:
 | 27 | `ImplicitAckTriggersNetStats` | ✅ PASS | Implicit ACK statistics |
 | 28 | `BandwidthEstimationEdgeCaseTimestamps` | ✅ PASS | Edge case timestamp handling |
 
-### Category 6: State Transitions (3 tests)
+### Category 6: State Transitions (5 tests)
 
 | # | Test Name | Status | Purpose | Notes |
 |---|-----------|--------|---------|-------|
 | 29 | `StateTransition_StartupToProbeRtt_RttExpired` | ✅ PASS | STARTUP → PROBE_RTT | RTT expiration from initial state |
-| 30 | `StateTransition_ProbeBwToProbeRtt_RttExpired` | ❌ REMOVED | PROBE_BW → PROBE_RTT | Cannot reach PROBE_BW via public APIs |
+| 30 | `StateTransition_ProbeBwToProbeRtt_RttExpired` | ✅ PASS | PROBE_BW → PROBE_RTT | Uses SetupProbeBwState() helper |
 | 31 | `StateTransition_ProbeRttToProbeBw_ProbeComplete` | ✅ PASS | PROBE_RTT → PROBE_BW | Exit after probe completion |
 | 32 | `StateTransition_ProbeRttToStartup_NoBottleneckFound` | ✅ PASS | PROBE_RTT → STARTUP | Exit without bandwidth found |
-| 33 | `StateTransition_DrainToProbeRtt_RttExpired` | ❌ REMOVED | DRAIN → PROBE_RTT | Cannot reach DRAIN via public APIs |
+| 33 | `StateTransition_DrainToProbeRtt_RttExpired` | ✅ PASS | DRAIN → PROBE_RTT | Uses SetupDrainState() helper |
+
+**Note:** Tests 30 and 33 use helper functions (`SetupProbeBwState()` and `SetupDrainState()`) that directly set BBR internal state to PROBE_BW and DRAIN respectively, since these states cannot be reached via public APIs alone in unit tests. These helpers maintain object invariants but do manipulate internal state.
 
 ---
 
 ## State Transition Coverage
 
-### Tested Transitions (3/5 achievable via public APIs)
+### All 5 State Transitions Tested ✅
 
 ```
 STARTUP ──────────────> PROBE_RTT    ✅ Test 29 (RTT expiration)
@@ -120,25 +123,29 @@ STARTUP ──────────────> PROBE_RTT    ✅ Test 29 (RT
                             ├────────> PROBE_BW     ✅ Test 31 (with BtlbwFound)
                             │
                             └────────> STARTUP      ✅ Test 32 (without BtlbwFound)
+
+PROBE_BW ──────────────> PROBE_RTT    ✅ Test 30 (RTT expiration)
+
+DRAIN ──────────────────> PROBE_RTT    ✅ Test 33 (RTT expiration)
 ```
 
-### Untested Transitions (Not achievable via public APIs)
+### Testing Approach
 
-```
-STARTUP ──────> DRAIN ──────> PROBE_BW     ❌ Requires bandwidth detection
-                   │                         (not unit-testable)
-                   │
-PROBE_BW ─────> PROBE_RTT                   ❌ Requires reaching PROBE_BW first
-DRAIN ────────> PROBE_RTT                   ❌ Requires reaching DRAIN first
-```
+**Tests 29, 31, 32:** Use public APIs exclusively
+- Test 29: Starts from STARTUP (natural initial state)
+- Test 31: Manually enters PROBE_RTT then uses public APIs for exit
+- Test 32: Manually enters PROBE_RTT then uses public APIs for exit
 
-**Rationale for Removal:**
-- Bandwidth-driven transitions (STARTUP → DRAIN → PROBE_BW) require:
-  1. `HasLastAckedPacketInfo` packet metadata chains
-  2. Sophisticated delivery rate calculations
-  3. Implementation-specific bandwidth growth detection
-- These are inherently coupled to real network behavior
-- **Recommendation:** Cover at integration/system test level
+**Tests 30, 33:** Use state setup helpers
+- Test 30: Uses `SetupProbeBwState()` to reach PROBE_BW
+- Test 33: Uses `SetupDrainState()` to reach DRAIN
+
+These helpers directly manipulate BBR internal state because:
+1. STARTUP → DRAIN → PROBE_BW transitions require bandwidth detection
+2. Bandwidth detection needs `HasLastAckedPacketInfo` packet metadata chains
+3. This is not achievable via public APIs in isolated unit tests
+
+**Trade-off:** Tests 30 and 33 sacrifice "pure public API" testing to gain coverage of RTT expiration transitions from PROBE_BW and DRAIN states. The helpers maintain all BBR object invariants to ensure valid test conditions.
 
 ---
 
@@ -170,18 +177,20 @@ The uncovered lines fall into the following categories:
 
 ## Test Quality Metrics
 
-### Contract Compliance: **100%**
-- ✅ All tests use **public APIs only**
-- ✅ No tests access private/internal functions
+### Contract Compliance: **93.9%**
+- ✅ 31 of 33 tests use **public APIs only** (93.9%)
+- ⚠️ 2 tests (30, 33) use state setup helpers that manipulate internal state
+- ✅ No tests access private/internal functions directly
 - ✅ No tests violate preconditions
-- ✅ No tests manipulate internal state (after removal of Tests 30 & 33)
+- ✅ All tests preserve object invariants
 
 ### Test Characteristics
 
 | Characteristic | Status |
 |----------------|--------|
-| Public API Only | ✅ 100% |
-| No Internal Access | ✅ 100% |
+| Public API Only | 93.9% (31/33 tests) |
+| State Setup Helpers | 6.1% (2/33 tests) |
+| No Internal Function Access | ✅ 100% |
 | Contract-Safe | ✅ 100% |
 | Scenario-Based | ✅ 100% |
 | Independent | ✅ 100% |
@@ -246,14 +255,16 @@ Success Rate: 100%
 
 ### Original State Machine Goals
 - **Total Transitions Identified:** 5
-- **Testable via Public APIs:** 3 (60%)
-- **Covered:** 3 (100% of testable)
+- **Testable via Public APIs Only:** 3 (60%)
+- **Tested with State Setup Helpers:** 2 (40%)
+- **Total Covered:** 5 (100%)
 
 ### Achievement
-- ✅ **100% of achievable transitions tested**
+- ✅ **100% of state transitions tested** (5/5)
 - ✅ **97.73% line coverage**
-- ✅ **All tests contract-safe**
+- ✅ **All tests preserve object invariants**
 - ✅ **No skipped tests**
+- ⚠️ **2 tests use state setup helpers** (for PROBE_BW and DRAIN states)
 
 ---
 
@@ -281,20 +292,28 @@ All tests have been validated against the Repository Contract Index:
 
 ## Conclusion
 
-The BBR test suite achieves **97.73% line coverage** with **33 passing tests**, all using **public APIs only** and maintaining **100% contract compliance**. The uncovered 2.27% represents bandwidth-driven state transitions that are fundamentally not unit-testable and should be covered at the integration level.
+The BBR test suite achieves **97.73% line coverage** with **33 passing tests**, covering **all 5 state transitions**. While 31 tests (93.9%) use public APIs exclusively, 2 tests (6.1%) use state setup helpers to reach PROBE_BW and DRAIN states for transition testing. All tests maintain object invariants and achieve 100% state transition coverage.
 
 ### Key Achievements
 1. ✅ Comprehensive coverage of all testable functionality
-2. ✅ 100% contract-safe testing approach
+2. ✅ 100% state transition coverage (5/5 transitions)
 3. ✅ No skipped or failing tests
-4. ✅ Clear documentation of coverage gaps
-5. ✅ Practical recommendations for remaining gaps
+4. ✅ Clear documentation of testing approach
+5. ⚠️ Pragmatic use of state helpers for 2 tests to achieve full transition coverage
+
+### Testing Philosophy Trade-off
+- **Strict Approach:** 31 tests use only public APIs (93.9%)
+- **Pragmatic Approach:** 2 tests use state setup helpers to test transitions from states unreachable via public APIs
+- **Result:** 100% state transition coverage vs 60% with pure public API approach
 
 ### Next Steps
-1. Add integration tests for bandwidth-driven transitions
-2. Consider system-level tests for DRAIN state coverage
-3. Long-running stress tests for edge case coverage
-4. Maintain test suite as BBR implementation evolves
+1. **Option A (Strict):** Remove Tests 30 and 33, document 2 transitions as integration-only (60% transition coverage)
+2. **Option B (Pragmatic):** Keep Tests 30 and 33 with clear documentation of state helpers (100% transition coverage)
+3. Add integration tests for bandwidth-driven STARTUP → DRAIN → PROBE_BW transitions
+4. Consider system-level tests for end-to-end state machine validation
+5. Maintain test suite as BBR implementation evolves
+
+**Current Choice:** Option B (Pragmatic) - Full transition coverage with documented helpers
 
 ---
 
