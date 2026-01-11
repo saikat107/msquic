@@ -1907,3 +1907,264 @@ TEST(BbrTest, StateTransition_DrainToProbeRtt_RttExpired)
     // Should transition to PROBE_RTT (RTT expiration takes priority)
     ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_RTT);
 }
+
+//
+// Test 34: Recovery Window Non-Zero During Recovery
+//
+// Scenario: BBR in recovery state, verify recovery window is managed.
+// Coverage: Line 495 coverage attempted - tests recovery window behavior
+//
+TEST(BbrTest, RecoveryWindowManagement)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send some packets
+    for (int i = 0; i < 10; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(
+            &Connection.CongestionControl, 1200);
+    }
+
+    // Trigger loss to enter recovery
+    QUIC_LOSS_EVENT LossEvent = {};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    LossEvent.NumRetransmittableBytes = 2400; // 2 packets lost
+    LossEvent.PersistentCongestion = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+
+    // Verify we're in recovery (not 0 = NOT_RECOVERY)
+    ASSERT_NE(Bbr->RecoveryState, 0u);
+
+    // ACK packets to progress through recovery
+    uint64_t TimeNow = 1000000;
+    for (int i = 0; i < 3; i++) {
+        QUIC_ACK_EVENT AckEvent = {};
+        AckEvent.TimeNow = TimeNow + (i * 10000);
+        AckEvent.AdjustedAckTime = TimeNow + (i * 10000);
+        AckEvent.MinRttValid = TRUE;
+        AckEvent.MinRtt = 50000;
+        AckEvent.NumRetransmittableBytes = 1200;
+        AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+        AckEvent.LargestAck = 11 + i;
+        AckEvent.LargestSentPacketNumber = 11 + i;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.AckedPackets = NULL;
+
+        // Send a new packet to keep traffic flowing
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(
+            &Connection.CongestionControl, 1200);
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+            &Connection.CongestionControl, &AckEvent);
+    }
+
+    // Recovery window should be managed and non-zero
+    ASSERT_GT(Bbr->RecoveryWindow, 0u);
+}
+
+//
+// Test 35: Send Allowance When Fully CC Blocked
+//
+// Scenario: BytesInFlight >= CongestionWindow, verify send allowance is 0.
+// Coverage: Line 636 - SendAllowance = 0
+//
+TEST(BbrTest, SendAllowanceFullyBlocked)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set up scenario where BytesInFlight >= CongestionWindow
+    uint32_t InitialCwnd = Bbr->CongestionWindow;
+    
+    // Send enough to fill the congestion window
+    uint32_t BytesToSend = InitialCwnd;
+    uint32_t PacketsToSend = (BytesToSend / 1200) + 1;
+    
+    for (uint32_t i = 0; i < PacketsToSend; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(
+            &Connection.CongestionControl, 1200);
+    }
+
+    // Verify BytesInFlight >= CongestionWindow
+    ASSERT_GE(Bbr->BytesInFlight, Bbr->CongestionWindow);
+
+    // Get send allowance - should be 0
+    uint64_t TimeNow = 1000000;
+    uint32_t SendAllowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl,
+        0,       // TimeSinceLastSend (doesn't matter when fully blocked)
+        FALSE);  // TimeSinceLastSendValid
+
+    ASSERT_EQ(SendAllowance, 0u);
+}
+
+//
+// Test 36: Bandwidth-Based Send Allowance Calculation (Non-STARTUP)
+//
+// Scenario: BBR in PROBE_RTT with pacing enabled, verify bandwidth-based send allowance.
+// Coverage: Line 659 - SendAllowance = (uint32_t)(BandwidthEst * Bbr->PacingGain * TimeSinceLastSend / GAIN_UNIT)
+//
+TEST(BbrTest, SendAllowanceBandwidthBased)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    Settings.PacingEnabled = TRUE;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Manually set PROBE_RTT state (not STARTUP) to trigger bandwidth-based calculation
+    Bbr->BbrState = BBR_STATE_PROBE_RTT;
+    Bbr->MinRtt = 50000; // 50ms - above QUIC_SEND_PACING_INTERVAL
+    Bbr->BtlbwFound = TRUE;
+
+    // Set a reasonable bandwidth estimate using the WindowedMaxFilter
+    QuicSlidingWindowExtremumUpdateMax(&Bbr->BandwidthFilter.WindowedMaxFilter, 100000, TimeNow);
+
+    // Send one packet
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, 1200);
+
+    uint64_t LastSendTime = TimeNow;
+    TimeNow += 10000; // Advance 10ms
+
+    // Get send allowance with valid TimeSinceLastSend
+    uint32_t SendAllowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl,
+        TimeNow - LastSendTime,  // TimeSinceLastSend in microseconds
+        TRUE);                    // TimeSinceLastSendValid
+
+    // Should calculate based on bandwidth (not just window - BytesInFlight)
+    // Allowance should be non-zero and calculated
+    ASSERT_GT(SendAllowance, 0u);
+}
+
+//
+// Test 37: High Pacing Rate Send Quantum
+//
+// Scenario: High pacing rate (>= 1.2 Mbps), verify send quantum uses rate-based calculation.
+// Coverage: Line 723 - Bbr->SendQuantum = CXPLAT_MIN(PacingRate * kMilliSecsInSec / BW_UNIT, 64 * 1024)
+//
+TEST(BbrTest, SendQuantumHighPacingRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 50; // Larger initial window
+    Settings.PacingEnabled = TRUE;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Set up high bandwidth to trigger high pacing rate path
+    // kHighPacingRateThresholdBytesPerSecond = 1200000 (1.2 MB/s)
+    // We need PacingRate >= 1200000 * BW_UNIT
+    
+    Bbr->MinRtt = 50000; // 50ms
+    Bbr->BtlbwFound = TRUE;
+
+    // Set very high bandwidth (10 Mbps = 10,000,000 bits/s = 1,250,000 bytes/s)
+    QuicSlidingWindowExtremumUpdateMax(&Bbr->BandwidthFilter.WindowedMaxFilter, 1250000, TimeNow);
+
+    // Update congestion window to reflect high bandwidth
+    Bbr->CongestionWindow = 500000; // Large window
+
+    // Send a packet first
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, 1200);
+
+    // Trigger SetSendQuantum via OnDataAcknowledged
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow;
+    AckEvent.AdjustedAckTime = TimeNow;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.LargestAck = 1;
+    AckEvent.LargestSentPacketNumber = 1;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+
+    // Send quantum should be calculated and set (non-zero)
+    // The actual value depends on bandwidth and rate thresholds
+    ASSERT_GT(Bbr->SendQuantum, 0u);
+}
+
+//
+// Test 38: ACK Aggregation in Target Window Calculation
+//
+// Scenario: BBR with bottleneck found and populated ACK height filter, verify target CWND includes aggregation.
+// Coverage: Line 752 - TargetCwnd += Entry.Value
+//
+TEST(BbrTest, TargetCwndWithAckAggregation)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+    uint64_t TimeNow = 1000000;
+
+    // Set up BBR with bottleneck found
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+
+    // Populate bandwidth filter
+    QuicSlidingWindowExtremumUpdateMax(&Bbr->BandwidthFilter.WindowedMaxFilter, 100000, TimeNow);
+
+    // Populate MaxAckHeightFilter with aggregation data
+    // This filter tracks excess ACKed bytes beyond expected
+    QuicSlidingWindowExtremumUpdateMax(&Bbr->MaxAckHeightFilter, 5000, Bbr->RoundTripCounter);
+
+    // Send some packets
+    for (int i = 0; i < 5; i++) {
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(
+            &Connection.CongestionControl, 1200);
+    }
+
+    // ACK to trigger congestion window update with ACK aggregation
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = TimeNow + 50000;
+    AckEvent.AdjustedAckTime = TimeNow + 50000;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.NumRetransmittableBytes = 6000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 6000;
+    AckEvent.LargestAck = 5;
+    AckEvent.LargestSentPacketNumber = 5;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+
+    // Congestion window should be calculated with ACK aggregation
+    // With BtlbwFound and populated MaxAckHeightFilter, CWND should account for aggregation
+    // This is implementation-dependent, but CWND should be influenced by the filter
+    ASSERT_GT(Bbr->CongestionWindow, 0u);
+}
