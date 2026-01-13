@@ -1972,7 +1972,25 @@ TEST(BbrTest, ProbeBwGainCycleDrain_TargetReached)
 //
 // Test 35: Recovery Window Non-Zero During Recovery
 //
-// Scenario: BBR in recovery state, verify recovery window is managed.
+// Category: Error Handling & Recovery
+//
+// Scenario: BBR enters recovery after packet loss, and recovery window is maintained
+//           as subsequent ACKs arrive during the recovery period.
+//
+// What: Tests that BBR properly manages the RecoveryWindow when in recovery state.
+//       Verifies that after loss-triggered recovery entry, the recovery window
+//       remains non-zero and is updated as ACKs arrive.
+//
+// How: 1. Initialize BBR and send 10 packets (creating bytes in flight)
+//      2. Trigger packet loss event (packets 1-5 lost) to enter recovery
+//      3. Verify RecoveryState transitions from NOT_RECOVERY (0) to recovery
+//      4. Send and ACK 3 additional packets to simulate recovery progress
+//      5. Verify RecoveryWindow remains > 0 throughout recovery
+//
+// Asserts:
+//   - RecoveryState != 0 after loss (in recovery)
+//   - RecoveryWindow > 0 after recovery progression
+//   - BBR maintains valid recovery window during the recovery period
 //
 TEST(BbrTest, RecoveryWindowManagement)
 {
@@ -2033,7 +2051,22 @@ TEST(BbrTest, RecoveryWindowManagement)
 //
 // Test 36: Send Allowance When Fully CC Blocked
 //
-// Scenario: BytesInFlight >= CongestionWindow, verify send allowance is 0.
+// Category: Congestion Window Management
+//
+// Scenario: Connection has filled its congestion window completely, and BBR
+//           correctly blocks further sends by returning 0 send allowance.
+//
+// What: Tests the congestion control blocking logic when BytesInFlight >= CongestionWindow.
+//       Verifies that QuicCongestionControlGetSendAllowance returns 0 when fully blocked.
+//
+// How: 1. Initialize BBR with default settings
+//      2. Calculate how many packets are needed to fill CongestionWindow
+//      3. Send enough packets to ensure BytesInFlight >= CongestionWindow
+//      4. Call GetSendAllowance and verify it returns 0
+//
+// Asserts:
+//   - BytesInFlight >= CongestionWindow after sending
+//   - SendAllowance == 0 when fully blocked
 //
 TEST(BbrTest, SendAllowanceFullyBlocked)
 {
@@ -2073,7 +2106,24 @@ TEST(BbrTest, SendAllowanceFullyBlocked)
 //
 // Test 37: Bandwidth-Based Send Allowance Calculation (Non-STARTUP)
 //
-// Scenario: BBR in PROBE_RTT with pacing enabled, verify bandwidth-based send allowance.
+// Category: Pacing & Send Allowance
+//
+// Scenario: BBR in PROBE_RTT state with pacing enabled calculates send allowance
+//           based on bandwidth and elapsed time rather than just window-based blocking.
+//
+// What: Tests the bandwidth-based send allowance calculation path in non-STARTUP states.
+//       When pacing is enabled and BBR is not in STARTUP, send allowance should be
+//       calculated based on the pacing rate and time elapsed since last send.
+//
+// How: 1. Initialize BBR with pacing enabled
+//      2. Manually set state to PROBE_RTT (non-STARTUP)
+//      3. Configure bandwidth estimate (100 KB/s) and MinRtt (50ms)
+//      4. Send one packet, then advance time by 10ms
+//      5. Query GetSendAllowance with valid TimeSinceLastSend
+//      6. Verify allowance is calculated based on bandwidth (non-zero)
+//
+// Asserts:
+//   - SendAllowance > 0 (bandwidth-based calculation active)
 //
 TEST(BbrTest, SendAllowanceBandwidthBased)
 {
@@ -2116,7 +2166,24 @@ TEST(BbrTest, SendAllowanceBandwidthBased)
 //
 // Test 38: High Pacing Rate Send Quantum
 //
-// Scenario: High pacing rate (>= 1.2 Mbps), verify send quantum uses rate-based calculation.
+// Category: Pacing & Send Quantum
+//
+// Scenario: BBR with high pacing rate (>= 1.2 Mbps threshold) triggers the high-rate
+//           send quantum calculation path.
+//
+// What: Tests that SetSendQuantum uses rate-based calculation when pacing rate exceeds
+//       kHighPacingRateThresholdBytesPerSecond (1.2 MB/s). At high rates, send quantum
+//       should be calculated based on the pacing rate rather than a fixed minimum.
+//
+// How: 1. Initialize BBR with pacing enabled and large initial window
+//      2. Set very high bandwidth (1.25 MB/s = 10 Mbps) to exceed threshold
+//      3. Configure MinRtt (50ms) and large CongestionWindow
+//      4. Send packet and trigger ACK to invoke SetSendQuantum
+//      5. Verify SendQuantum is set to a non-zero, calculated value
+//
+// Asserts:
+//   - SendQuantum > 0 after ACK processing
+//   - SetSendQuantum logic executed with high pacing rate
 //
 TEST(BbrTest, SendQuantumHighPacingRate)
 {
@@ -2172,7 +2239,25 @@ TEST(BbrTest, SendQuantumHighPacingRate)
 //
 // Test 39: ACK Aggregation in Target Window Calculation
 //
-// Scenario: BBR with bottleneck found and populated ACK height filter, verify target CWND includes aggregation.
+// Category: Congestion Window Management
+//
+// Scenario: BBR with bottleneck found and populated MaxAckHeightFilter includes ACK
+//           aggregation data in target congestion window calculation.
+//
+// What: Tests that UpdateCongestionWindow considers ACK aggregation when computing
+//       the target CWND. When BtlbwFound is true and MaxAckHeightFilter has data,
+//       the target window should account for excess ACKed bytes (aggregation).
+//
+// How: 1. Initialize BBR and set BtlbwFound = TRUE
+//      2. Populate BandwidthFilter with 100 KB/s estimate
+//      3. Populate MaxAckHeightFilter with 5000 bytes aggregation
+//      4. Send 5 packets (6000 bytes total)
+//      5. ACK all packets with aggregated bytes
+//      6. Verify CongestionWindow is calculated with aggregation included
+//
+// Asserts:
+//   - CongestionWindow > 0 after ACK processing
+//   - CWND calculation influenced by MaxAckHeightFilter data
 //
 TEST(BbrTest, TargetCwndWithAckAggregation)
 {
@@ -2226,10 +2311,27 @@ TEST(BbrTest, TargetCwndWithAckAggregation)
 }
 
 //
-
-//
 // Test 40: ACK Timing Edge Case - Fallback to Raw AckTime
-// Scenario: ACK with backward-adjusted time triggers fallback path
+//
+// Category: Edge Cases & Timing
+//
+// Scenario: ACK event arrives with AdjustedAckTime earlier than a previous packet's
+//           adjusted time, triggering fallback to raw TimeNow for RTT calculation.
+//
+// What: Tests the ACK timing edge case handling in UpdateModelAndState (lines 153-154).
+//       When LastAckedPacketInfo.AdjustedAckTime > AckEvent.AdjustedAckTime,
+//       BBR should fall back to using AckEvent.TimeNow instead.
+//
+// How: 1. Initialize BBR and send 2 packets
+//      2. Create ACK event where AdjustedAckTime is earlier than expected
+//         (simulating clock skew or adjustment anomaly)
+//      3. Process the ACK
+//      4. Verify BBR handles the edge case without crashing
+//      5. Verify BytesInFlight is correctly reduced
+//
+// Asserts:
+//   - BytesInFlight < 2000 after ACK (bytes properly accounted)
+//   - BBR processes ACK without error despite timing anomaly
 //
 TEST(BbrTest, AckTimingEdgeCase_FallbackToRawAckTime)
 {
@@ -2275,7 +2377,25 @@ TEST(BbrTest, AckTimingEdgeCase_FallbackToRawAckTime)
 
 //
 // Test 41: Invalid Delivery Rates - Both UINT64_MAX Skip
-// Scenario: Both SendRate and AckRate invalid, triggering continue statement
+//
+// Category: Edge Cases & Delivery Rate
+//
+// Scenario: ACK arrives with timing that causes both SendRate and AckRate to be
+//           computed as UINT64_MAX (invalid), triggering the skip/continue path.
+//
+// What: Tests the delivery rate validation logic in UpdateModelAndState (lines 170-172).
+//       When both SendRate and AckRate are UINT64_MAX (invalid due to zero time delta),
+//       BBR should skip bandwidth filter update and continue processing.
+//
+// How: 1. Initialize BBR and send a packet at time T
+//      2. ACK the packet at the same time T (zero elapsed time)
+//      3. This causes both SendRate and AckRate calculations to produce UINT64_MAX
+//      4. Process the ACK and verify BBR handles invalid rates gracefully
+//      5. Verify BytesInFlight is still correctly reduced to 0
+//
+// Asserts:
+//   - BytesInFlight == 0 after ACK (bytes properly accounted)
+//   - BBR processes ACK without crashing despite invalid delivery rates
 //
 TEST(BbrTest, InvalidDeliveryRates_BothMaxSkip)
 {
@@ -2318,7 +2438,25 @@ TEST(BbrTest, InvalidDeliveryRates_BothMaxSkip)
 
 //
 // Test 42: Recovery GROWTH State - Window Expansion
-// Scenario: BBR in recovery, ACKs arrive, recovery window should expand or maintain
+//
+// Category: Error Handling & Recovery
+//
+// Scenario: BBR in recovery state receives ACKs for outstanding packets, triggering
+//           the GROWTH recovery state where the recovery window expands or is maintained.
+//
+// What: Tests the recovery window management during the GROWTH phase. After entering
+//       recovery due to loss, subsequent ACKs should cause the recovery window to
+//       either maintain or expand (not shrink).
+//
+// How: 1. Initialize BBR and send 10 packets
+//      2. Trigger loss event (3 packets lost) to enter recovery
+//      3. Record initial RecoveryWindow value
+//      4. ACK 6 remaining packets in a single ACK event
+//      5. Verify RecoveryWindow >= initial value (maintained or grown)
+//
+// Asserts:
+//   - RecoveryState != 0 after loss (in recovery)
+//   - RecoveryWindow >= RecoveryWindowBefore (maintained or grown)
 //
 TEST(BbrTest, RecoveryGrowthState_WindowExpansion)
 {
@@ -2374,7 +2512,26 @@ TEST(BbrTest, RecoveryGrowthState_WindowExpansion)
 
 //
 // Test 43: Send Allowance Bandwidth-Only Path (Non-STARTUP)
-// Scenario: Non-STARTUP state with elapsed time, bandwidth-only calculation
+//
+// Category: Pacing & Send Allowance
+//
+// Scenario: BBR in PROBE_RTT with pacing enabled and elapsed time since last send,
+//           triggering the bandwidth-only send allowance calculation path.
+//
+// What: Tests the bandwidth-only calculation path in GetSendAllowance for non-STARTUP
+//       states. When TimeSinceLastSend is valid and pacing is enabled, send allowance
+//       should be calculated based solely on bandwidth and elapsed time (not window).
+//
+// How: 1. Initialize BBR with pacing enabled
+//      2. Set state to PROBE_RTT (non-STARTUP)
+//      3. Configure bandwidth estimate (1 MB/s) and MinRtt (50ms)
+//      4. Send a packet to establish LastSendTime
+//      5. Query GetSendAllowance with 10ms elapsed time
+//      6. Verify bandwidth-based allowance is returned (> 0)
+//
+// Asserts:
+//   - SendAllowance > 0 (bandwidth-based calculation)
+//   - Bandwidth-only path executed (not window-based)
 //
 TEST(BbrTest, SendAllowanceBandwidthOnly_NonStartupPath)
 {
@@ -2413,7 +2570,25 @@ TEST(BbrTest, SendAllowanceBandwidthOnly_NonStartupPath)
 
 //
 // Test 44: High Pacing Rate Send Quantum - Large Burst Size
-// Scenario: Very high pacing rate triggers large send quantum calculation
+//
+// Category: Pacing & Send Quantum
+//
+// Scenario: BBR with very high pacing rate calculates a large send quantum burst size
+//           based on the rate, while respecting the maximum quantum cap (64KB).
+//
+// What: Tests SetSendQuantum's large burst size calculation for very high pacing rates.
+//       When pacing rate exceeds the high threshold (1.2 MB/s), send quantum should be
+//       calculated as (PacingRate * kSendQuantumMs) / BW_UNIT, capped at 64KB.
+//
+// How: 1. Initialize BBR with default settings
+//      2. Set very high bandwidth (1.25 MB/s = 10 Mbps) to trigger high-rate path
+//      3. Configure MinRtt (50ms) and large CongestionWindow (500KB)
+//      4. Send packet and trigger ACK to invoke SetSendQuantum
+//      5. Verify SendQuantum is non-zero and capped at 64KB
+//
+// Asserts:
+//   - SendQuantum > 0 (calculated based on high rate)
+//   - SendQuantum <= 65536 (capped at 64KB maximum)
 //
 TEST(BbrTest, HighPacingRateSendQuantum_LargeBurstSize)
 {
