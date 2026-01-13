@@ -1574,7 +1574,7 @@ TEST(BbrTest, BandwidthEstimationEdgeCaseTimestamps)
 // - 3 consecutive rounds without 25% bandwidth growth
 // - Proper round trip detection and delivery rate history
 //
-// The bandwidth detection logic (lines 861-870 in bbr.c) is tightly coupled to realistic
+// The bandwidth detection logic is tightly coupled to realistic
 // network behavior and is implicitly tested by existing BBR tests that process real traffic.
 //
 
@@ -1909,10 +1909,70 @@ TEST(BbrTest, StateTransition_DrainToProbeRtt_RttExpired)
 }
 
 //
-// Test 34: Recovery Window Non-Zero During Recovery
+// Test 34: PROBE_BW Gain Cycle Drain - Target Reached
+// Scenario: PROBE_BW with drain gain (<1.0), bytes in flight below target advances cycle
+//
+TEST(BbrTest, ProbeBwGainCycleDrain_TargetReached)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+    Settings.InitialWindowPackets = 10;
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set up PROBE_BW state
+    Bbr->BbrState = BBR_STATE_PROBE_BW;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000; // 50ms
+    Bbr->MinRttTimestamp = 1000000;
+
+    // Set bandwidth estimate (1 Mbps = 125,000 bytes/s)
+    QuicSlidingWindowExtremumUpdateMax(&Bbr->BandwidthFilter.WindowedMaxFilter, 125000, 1000000);
+
+    // Set pacing gain < GAIN_UNIT (drain phase)
+    // From kPacingGain array: {5/4, 3/4, 1, 1, 1, 1, 1, 1}
+    // Index 1 has gain = 3/4 * 1024 = 768
+    Bbr->PacingCycleIndex = 1;
+    Bbr->PacingGain = 768; // Less than GAIN_UNIT (1024)
+    Bbr->CycleStart = 1000000;
+
+    // Send minimal data to keep bytes in flight LOW
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(
+        &Connection.CongestionControl, 1200);
+
+    // BytesInFlight should be well below target
+    // TargetCwnd ~= 125000 bytes/s * 50ms = 6250 bytes
+    ASSERT_LT(Bbr->BytesInFlight, 5000u);
+
+    // Complete round trip to allow cycle advancement
+    Bbr->EndOfRoundTrip = 0;
+    Bbr->EndOfRoundTripValid = TRUE;
+
+    // ACK in PROBE_BW with drain gain and low bytes in flight
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.TimeNow = 1100000;
+    AckEvent.AdjustedAckTime = 1100000;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.LargestAck = 1;
+    AckEvent.LargestSentPacketNumber = 10; // Trigger round end
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_BW);
+}
+
+//
+// Test 35: Recovery Window Non-Zero During Recovery
 //
 // Scenario: BBR in recovery state, verify recovery window is managed.
-// Coverage: Line 495 coverage attempted - tests recovery window behavior
 //
 TEST(BbrTest, RecoveryWindowManagement)
 {
@@ -1971,10 +2031,9 @@ TEST(BbrTest, RecoveryWindowManagement)
 }
 
 //
-// Test 35: Send Allowance When Fully CC Blocked
+// Test 36: Send Allowance When Fully CC Blocked
 //
 // Scenario: BytesInFlight >= CongestionWindow, verify send allowance is 0.
-// Coverage: Line 636 - SendAllowance = 0
 //
 TEST(BbrTest, SendAllowanceFullyBlocked)
 {
@@ -2012,10 +2071,9 @@ TEST(BbrTest, SendAllowanceFullyBlocked)
 }
 
 //
-// Test 36: Bandwidth-Based Send Allowance Calculation (Non-STARTUP)
+// Test 37: Bandwidth-Based Send Allowance Calculation (Non-STARTUP)
 //
 // Scenario: BBR in PROBE_RTT with pacing enabled, verify bandwidth-based send allowance.
-// Coverage: Line 659 - SendAllowance = (uint32_t)(BandwidthEst * Bbr->PacingGain * TimeSinceLastSend / GAIN_UNIT)
 //
 TEST(BbrTest, SendAllowanceBandwidthBased)
 {
@@ -2056,10 +2114,9 @@ TEST(BbrTest, SendAllowanceBandwidthBased)
 }
 
 //
-// Test 37: High Pacing Rate Send Quantum
+// Test 38: High Pacing Rate Send Quantum
 //
 // Scenario: High pacing rate (>= 1.2 Mbps), verify send quantum uses rate-based calculation.
-// Coverage: Line 723 - Bbr->SendQuantum = CXPLAT_MIN(PacingRate * kMilliSecsInSec / BW_UNIT, 64 * 1024)
 //
 TEST(BbrTest, SendQuantumHighPacingRate)
 {
@@ -2113,10 +2170,9 @@ TEST(BbrTest, SendQuantumHighPacingRate)
 }
 
 //
-// Test 38: ACK Aggregation in Target Window Calculation
+// Test 39: ACK Aggregation in Target Window Calculation
 //
 // Scenario: BBR with bottleneck found and populated ACK height filter, verify target CWND includes aggregation.
-// Coverage: Line 752 - TargetCwnd += Entry.Value
 //
 TEST(BbrTest, TargetCwndWithAckAggregation)
 {
@@ -2172,9 +2228,8 @@ TEST(BbrTest, TargetCwndWithAckAggregation)
 //
 
 //
-// Test 39: ACK Timing Edge Case - Fallback to Raw AckTime
+// Test 40: ACK Timing Edge Case - Fallback to Raw AckTime
 // Scenario: ACK with backward-adjusted time triggers fallback path
-// Coverage: Line 154 - AckElapsed = CxPlatTimeDiff64(AckedPacket->LastAckedPacketInfo.AckTime, TimeNow)
 //
 TEST(BbrTest, AckTimingEdgeCase_FallbackToRawAckTime)
 {
@@ -2219,9 +2274,8 @@ TEST(BbrTest, AckTimingEdgeCase_FallbackToRawAckTime)
 }
 
 //
-// Test 40: Invalid Delivery Rates - Both UINT64_MAX Skip
+// Test 41: Invalid Delivery Rates - Both UINT64_MAX Skip
 // Scenario: Both SendRate and AckRate invalid, triggering continue statement
-// Coverage: Line 171 - if (SendRate == UINT64_MAX && AckRate == UINT64_MAX) continue
 //
 TEST(BbrTest, InvalidDeliveryRates_BothMaxSkip)
 {
@@ -2263,9 +2317,8 @@ TEST(BbrTest, InvalidDeliveryRates_BothMaxSkip)
 }
 
 //
-// Test 41: Recovery GROWTH State - Window Expansion
+// Test 42: Recovery GROWTH State - Window Expansion
 // Scenario: BBR in recovery, ACKs arrive, recovery window should expand or maintain
-// Coverage: Line 495 - if (Bbr->RecoveryState == RECOVERY_STATE_GROWTH) Bbr->RecoveryWindow += BytesAcked
 //
 TEST(BbrTest, RecoveryGrowthState_WindowExpansion)
 {
@@ -2320,9 +2373,8 @@ TEST(BbrTest, RecoveryGrowthState_WindowExpansion)
 }
 
 //
-// Test 42: Send Allowance Bandwidth-Only Path (Non-STARTUP)
+// Test 43: Send Allowance Bandwidth-Only Path (Non-STARTUP)
 // Scenario: Non-STARTUP state with elapsed time, bandwidth-only calculation
-// Coverage: Line 659 - SendAllowance = (uint32_t)(BandwidthEst * Bbr->PacingGain * TimeSinceLastSend / GAIN_UNIT)
 //
 TEST(BbrTest, SendAllowanceBandwidthOnly_NonStartupPath)
 {
@@ -2355,14 +2407,13 @@ TEST(BbrTest, SendAllowanceBandwidthOnly_NonStartupPath)
         TRUE);   // TimeSinceLastSendValid
 
     // With bandwidth and elapsed time, should have non-zero allowance
-    // Line 659 path: bandwidth-based calculation
+    // bandwidth-based calculation
     ASSERT_GT(SendAllowance, 0u);
 }
 
 //
-// Test 43: High Pacing Rate Send Quantum - Large Burst Size
+// Test 44: High Pacing Rate Send Quantum - Large Burst Size
 // Scenario: Very high pacing rate triggers large send quantum calculation
-// Coverage: Line 723 - Bbr->SendQuantum = CXPLAT_MIN(PacingRate * kMilliSecsInSec / BW_UNIT, 64 * 1024)
 //
 TEST(BbrTest, HighPacingRateSendQuantum_LargeBurstSize)
 {
@@ -2407,74 +2458,9 @@ TEST(BbrTest, HighPacingRateSendQuantum_LargeBurstSize)
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
         &Connection.CongestionControl, &AckEvent);
 
-    // Line 720-723: SetSendQuantum logic executed
+    // SetSendQuantum logic executed
     // SendQuantum should be set (non-zero) based on pacing rate
     // Actual value depends on internal calculations, but should be reasonable
     ASSERT_GT(Bbr->SendQuantum, 0u);
     ASSERT_LE(Bbr->SendQuantum, 65536u); // Capped at 64KB
-}
-
-//
-// Test 44: PROBE_BW Gain Cycle Drain - Target Reached
-// Scenario: PROBE_BW with drain gain (<1.0), bytes in flight below target advances cycle
-// Coverage: Lines 848-850 - Gain cycle advancement when BytesInFlight <= TargetCwnd
-//
-TEST(BbrTest, ProbeBwGainCycleDrain_TargetReached)
-{
-    QUIC_CONNECTION Connection;
-    QUIC_SETTINGS_INTERNAL Settings{};
-    Settings.InitialWindowPackets = 10;
-    InitializeMockConnection(Connection, 1280);
-    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-
-    QUIC_CONGESTION_CONTROL_BBR* Bbr = &Connection.CongestionControl.Bbr;
-
-    // Set up PROBE_BW state
-    Bbr->BbrState = BBR_STATE_PROBE_BW;
-    Bbr->BtlbwFound = TRUE;
-    Bbr->MinRtt = 50000; // 50ms
-    Bbr->MinRttTimestamp = 1000000;
-
-    // Set bandwidth estimate (1 Mbps = 125,000 bytes/s)
-    QuicSlidingWindowExtremumUpdateMax(&Bbr->BandwidthFilter.WindowedMaxFilter, 125000, 1000000);
-
-    // Set pacing gain < GAIN_UNIT (drain phase)
-    // From kPacingGain array: {5/4, 3/4, 1, 1, 1, 1, 1, 1}
-    // Index 1 has gain = 3/4 * 1024 = 768
-    Bbr->PacingCycleIndex = 1;
-    Bbr->PacingGain = 768; // Less than GAIN_UNIT (1024)
-    Bbr->CycleStart = 1000000;
-
-    // Send minimal data to keep bytes in flight LOW
-    Connection.CongestionControl.QuicCongestionControlOnDataSent(
-        &Connection.CongestionControl, 1200);
-
-    // BytesInFlight should be well below target
-    // TargetCwnd ~= 125000 bytes/s * 50ms = 6250 bytes
-    ASSERT_LT(Bbr->BytesInFlight, 5000u);
-
-    // Complete round trip to allow cycle advancement
-    Bbr->EndOfRoundTrip = 0;
-    Bbr->EndOfRoundTripValid = TRUE;
-
-    // ACK in PROBE_BW with drain gain and low bytes in flight
-    QUIC_ACK_EVENT AckEvent = {};
-    AckEvent.TimeNow = 1100000;
-    AckEvent.AdjustedAckTime = 1100000;
-    AckEvent.MinRttValid = TRUE;
-    AckEvent.MinRtt = 50000;
-    AckEvent.NumRetransmittableBytes = 1200;
-    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
-    AckEvent.LargestAck = 1;
-    AckEvent.LargestSentPacketNumber = 10; // Trigger round end
-    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
-    AckEvent.HasLoss = FALSE;
-    AckEvent.AckedPackets = NULL;
-
-    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
-        &Connection.CongestionControl, &AckEvent);
-
-    // Lines 847-850 logic should have been evaluated
-    // Gain cycle may have advanced (line 855)
-    ASSERT_EQ(Bbr->BbrState, BBR_STATE_PROBE_BW);
 }
