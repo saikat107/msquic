@@ -582,3 +582,438 @@ TEST(AckTrackerTest, InterleavedAddAndDuplicateCheck)
     ASSERT_EQ(tracker.AddPacketNumber(25), false);
     ASSERT_EQ(tracker.AddPacketNumber(25), true);
 }
+
+//
+// ============================================================================
+// Tests requiring QUIC_CONNECTION context
+//
+// These tests use a MockPacketSpaceWithConnection structure that embeds the
+// QUIC_PACKET_SPACE (containing the AckTracker) alongside a QUIC_CONNECTION.
+// This satisfies the pointer arithmetic in QuicAckTrackerGetPacketSpace().
+// ============================================================================
+//
+
+//
+// Mock structure that properly embeds QUIC_PACKET_SPACE with its Connection pointer.
+// The AckTracker is accessed via CXPLAT_CONTAINING_RECORD to get PacketSpace,
+// then PacketSpace->Connection is used.
+//
+struct MockPacketSpaceWithConnection {
+    QUIC_PACKET_SPACE PacketSpace;
+    QUIC_CONNECTION Connection;
+
+    MockPacketSpaceWithConnection() {
+        CxPlatZeroMemory(&PacketSpace, sizeof(PacketSpace));
+        CxPlatZeroMemory(&Connection, sizeof(Connection));
+
+        // Link packet space to connection
+        PacketSpace.Connection = &Connection;
+
+        // Initialize the AckTracker
+        QuicAckTrackerInitialize(&PacketSpace.AckTracker);
+
+        // Initialize connection settings needed by AckTracker functions
+        Connection.Settings.MaxAckDelayMs = 25;  // Default ACK delay
+        Connection.PacketTolerance = 2;           // Default packet tolerance
+        Connection.ReorderingThreshold = 0;       // Disabled by default
+        Connection.AckDelayExponent = 3;          // Default exponent
+
+        // Initialize Send state to avoid validation issues
+        // Set Uninitialized to skip QuicSendValidate in DEBUG builds
+        Connection.Send.Uninitialized = TRUE;
+
+        // Initialize list head for send streams (needed by some functions)
+        CxPlatListInitializeHead(&Connection.Send.SendStreams);
+    }
+
+    ~MockPacketSpaceWithConnection() {
+        QuicAckTrackerUninitialize(&PacketSpace.AckTracker);
+    }
+
+    QUIC_ACK_TRACKER* Tracker() {
+        return &PacketSpace.AckTracker;
+    }
+};
+
+//
+// Test: QuicAckTrackerAckPacket with NON_ACK_ELICITING packet type.
+//
+// Scenario: Add a non-ACK-eliciting packet and verify it doesn't increment
+// the AckElicitingPacketsToAcknowledge counter.
+//
+// Assertions: Packet is added to the ack range, counter remains 0.
+//
+TEST(AckTrackerTest, AckPacketNonAckEliciting)
+{
+    MockPacketSpaceWithConnection mock;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,                            // PacketNumber
+        1000,                           // RecvTimeUs
+        CXPLAT_ECN_NON_ECT,            // ECN
+        QUIC_ACK_TYPE_NON_ACK_ELICITING // AckType
+    );
+
+    ASSERT_EQ(mock.Tracker()->AckElicitingPacketsToAcknowledge, 0u);
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 1u);
+    ASSERT_EQ(mock.Tracker()->LargestPacketNumberRecvTime, 1000u);
+    ASSERT_EQ(mock.Tracker()->AlreadyWrittenAckFrame, FALSE);
+}
+
+//
+// Test: QuicAckTrackerAckPacket with ACK_ELICITING packet type.
+//
+// Scenario: Add an ACK-eliciting packet and verify the counter increments.
+//
+// Assertions: AckElicitingPacketsToAcknowledge counter increments.
+//
+TEST(AckTrackerTest, AckPacketAckEliciting)
+{
+    MockPacketSpaceWithConnection mock;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,                        // PacketNumber
+        1000,                       // RecvTimeUs
+        CXPLAT_ECN_NON_ECT,        // ECN
+        QUIC_ACK_TYPE_ACK_ELICITING // AckType
+    );
+
+    ASSERT_EQ(mock.Tracker()->AckElicitingPacketsToAcknowledge, 1u);
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 1u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket with ECN ECT_0.
+//
+// Scenario: Add packet with ECN ECT_0 codepoint.
+//
+// Assertions: ECT_0 counter increments, NonZeroRecvECN flag set.
+//
+TEST(AckTrackerTest, AckPacketEcnEct0)
+{
+    MockPacketSpaceWithConnection mock;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        1000,
+        CXPLAT_ECN_ECT_0,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->NonZeroRecvECN, TRUE);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_0_Count, 1u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_1_Count, 0u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.CE_Count, 0u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket with ECN ECT_1.
+//
+// Scenario: Add packet with ECN ECT_1 codepoint.
+//
+// Assertions: ECT_1 counter increments, NonZeroRecvECN flag set.
+//
+TEST(AckTrackerTest, AckPacketEcnEct1)
+{
+    MockPacketSpaceWithConnection mock;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        1000,
+        CXPLAT_ECN_ECT_1,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->NonZeroRecvECN, TRUE);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_0_Count, 0u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_1_Count, 1u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.CE_Count, 0u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket with ECN CE (Congestion Experienced).
+//
+// Scenario: Add packet with ECN CE codepoint.
+//
+// Assertions: CE counter increments, NonZeroRecvECN flag set.
+//
+TEST(AckTrackerTest, AckPacketEcnCE)
+{
+    MockPacketSpaceWithConnection mock;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        1000,
+        CXPLAT_ECN_CE,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->NonZeroRecvECN, TRUE);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_0_Count, 0u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_1_Count, 0u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.CE_Count, 1u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket detects reordered packets.
+//
+// Scenario: Add packets out of order (higher packet first, then lower).
+//
+// Assertions: Connection stats show reordered packet count incremented.
+//
+TEST(AckTrackerTest, AckPacketDetectsReordering)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Add packet 200 first
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        200,
+        1000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Connection.Stats.Recv.ReorderedPackets, 0u);
+
+    // Add packet 100 (older than 200) - this is reordering
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        2000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Connection.Stats.Recv.ReorderedPackets, 1u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket updates receive time only for new largest packet.
+//
+// Scenario: Add packets in both orders and verify receive time is only
+// updated when the new packet is the largest.
+//
+// Assertions: LargestPacketNumberRecvTime only updates for new largest.
+//
+TEST(AckTrackerTest, AckPacketRecvTimeOnlyForLargest)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Add packet 100
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        1000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->LargestPacketNumberRecvTime, 1000u);
+
+    // Add packet 50 (not the largest) - should NOT update recv time
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        50,
+        2000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->LargestPacketNumberRecvTime, 1000u);
+
+    // Add packet 200 (new largest) - should update recv time
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        200,
+        3000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->LargestPacketNumberRecvTime, 3000u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket clears AlreadyWrittenAckFrame flag.
+//
+// Scenario: Set AlreadyWrittenAckFrame = TRUE, add packet, verify it's cleared.
+//
+// Assertions: AlreadyWrittenAckFrame is FALSE after adding packet.
+//
+TEST(AckTrackerTest, AckPacketClearsAlreadyWrittenFlag)
+{
+    MockPacketSpaceWithConnection mock;
+    mock.Tracker()->AlreadyWrittenAckFrame = TRUE;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        1000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_NON_ACK_ELICITING
+    );
+
+    ASSERT_EQ(mock.Tracker()->AlreadyWrittenAckFrame, FALSE);
+}
+
+//
+// Test: QuicAckTrackerOnAckFrameAcked removes acknowledged packets.
+//
+// Scenario: Add packets to tracker, then call OnAckFrameAcked to remove them.
+//
+// Assertions: Packets up to LargestAckedPacketNumber are removed.
+//
+TEST(AckTrackerTest, OnAckFrameAckedRemovesPackets)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Add packets 100, 101, 102, 103, 104
+    for (uint64_t i = 100; i <= 104; i++) {
+        QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, i);
+    }
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 1u);
+
+    // Ack up to packet 102
+    QuicAckTrackerOnAckFrameAcked(mock.Tracker(), 102);
+
+    // Only packets 103, 104 should remain
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 1u);
+    uint64_t minValue;
+    ASSERT_TRUE(QuicRangeGetMinSafe(&mock.Tracker()->PacketNumbersToAck, &minValue));
+    ASSERT_EQ(minValue, 103u);
+}
+
+//
+// Test: QuicAckTrackerOnAckFrameAcked removes all packets.
+//
+// Scenario: Acknowledge all packets, verify range becomes empty.
+//
+// Assertions: PacketNumbersToAck becomes empty.
+//
+TEST(AckTrackerTest, OnAckFrameAckedRemovesAllPackets)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Add packets 100, 101, 102
+    QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, 100);
+    QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, 101);
+    QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, 102);
+
+    // Set AckElicitingPacketsToAcknowledge to verify it gets cleared
+    mock.Tracker()->AckElicitingPacketsToAcknowledge = 3;
+
+    // Ack all packets
+    QuicAckTrackerOnAckFrameAcked(mock.Tracker(), 102);
+
+    // Range should be empty
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 0u);
+    // Counter should be cleared when no packets left
+    ASSERT_EQ(mock.Tracker()->AckElicitingPacketsToAcknowledge, 0u);
+}
+
+//
+// Test: QuicAckTrackerOnAckFrameAcked with gaps - packets remain after ack.
+//
+// Scenario: Add non-contiguous packets, ack middle, verify remaining.
+//
+// Assertions: Only packets > LargestAckedPacketNumber remain.
+//
+TEST(AckTrackerTest, OnAckFrameAckedWithGaps)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Add packets 100, 105, 110 (with gaps)
+    QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, 100);
+    QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, 105);
+    QuicRangeAddValue(&mock.Tracker()->PacketNumbersToAck, 110);
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 3u);
+
+    // Ack up to 105
+    QuicAckTrackerOnAckFrameAcked(mock.Tracker(), 105);
+
+    // Only 110 should remain
+    ASSERT_EQ(QuicRangeSize(&mock.Tracker()->PacketNumbersToAck), 1u);
+    uint64_t minValue;
+    ASSERT_TRUE(QuicRangeGetMinSafe(&mock.Tracker()->PacketNumbersToAck, &minValue));
+    ASSERT_EQ(minValue, 110u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket handles multiple ECN types in sequence.
+//
+// Scenario: Add packets with different ECN types and verify all counters.
+//
+// Assertions: All ECN counters increment correctly.
+//
+TEST(AckTrackerTest, AckPacketMultipleEcnTypes)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Add packets with different ECN types
+    QuicAckTrackerAckPacket(mock.Tracker(), 100, 1000, CXPLAT_ECN_ECT_0, QUIC_ACK_TYPE_NON_ACK_ELICITING);
+    QuicAckTrackerAckPacket(mock.Tracker(), 101, 1001, CXPLAT_ECN_ECT_1, QUIC_ACK_TYPE_NON_ACK_ELICITING);
+    QuicAckTrackerAckPacket(mock.Tracker(), 102, 1002, CXPLAT_ECN_CE, QUIC_ACK_TYPE_NON_ACK_ELICITING);
+    QuicAckTrackerAckPacket(mock.Tracker(), 103, 1003, CXPLAT_ECN_NON_ECT, QUIC_ACK_TYPE_NON_ACK_ELICITING);
+    QuicAckTrackerAckPacket(mock.Tracker(), 104, 1004, CXPLAT_ECN_ECT_0, QUIC_ACK_TYPE_NON_ACK_ELICITING);
+
+    ASSERT_EQ(mock.Tracker()->NonZeroRecvECN, TRUE);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_0_Count, 2u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.ECT_1_Count, 1u);
+    ASSERT_EQ(mock.Tracker()->ReceivedECN.CE_Count, 1u);
+}
+
+//
+// Test: QuicAckTrackerAckPacket skips send flag work if ACK already queued.
+//
+// Scenario: Pre-set QUIC_CONN_SEND_FLAG_ACK, add packet, verify counter increments
+// but we take the early exit path (line 243).
+//
+// Assertions: Counter increments, flag remains set, no additional work done.
+//
+TEST(AckTrackerTest, AckPacketAckAlreadyQueued)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Pre-set ACK flag
+    mock.Connection.Send.SendFlags = QUIC_CONN_SEND_FLAG_ACK;
+
+    QuicAckTrackerAckPacket(
+        mock.Tracker(),
+        100,
+        1000,
+        CXPLAT_ECN_NON_ECT,
+        QUIC_ACK_TYPE_ACK_ELICITING
+    );
+
+    // Counter should still increment
+    ASSERT_EQ(mock.Tracker()->AckElicitingPacketsToAcknowledge, 1u);
+    // Flag should still be set
+    ASSERT_TRUE(mock.Connection.Send.SendFlags & QUIC_CONN_SEND_FLAG_ACK);
+}
+
+//
+// Test: QuicAckTrackerAckPacket multiple ACK eliciting packets.
+//
+// Scenario: Add multiple ACK-eliciting packets and verify counter accumulates.
+//
+// Assertions: AckElicitingPacketsToAcknowledge increments for each packet.
+//
+TEST(AckTrackerTest, AckPacketMultipleAckEliciting)
+{
+    MockPacketSpaceWithConnection mock;
+
+    // Pre-set ACK flag to avoid triggering complex send logic
+    mock.Connection.Send.SendFlags = QUIC_CONN_SEND_FLAG_ACK;
+
+    QuicAckTrackerAckPacket(mock.Tracker(), 100, 1000, CXPLAT_ECN_NON_ECT, QUIC_ACK_TYPE_ACK_ELICITING);
+    QuicAckTrackerAckPacket(mock.Tracker(), 101, 1001, CXPLAT_ECN_NON_ECT, QUIC_ACK_TYPE_ACK_ELICITING);
+    QuicAckTrackerAckPacket(mock.Tracker(), 102, 1002, CXPLAT_ECN_NON_ECT, QUIC_ACK_TYPE_ACK_ELICITING);
+
+    ASSERT_EQ(mock.Tracker()->AckElicitingPacketsToAcknowledge, 3u);
+}
