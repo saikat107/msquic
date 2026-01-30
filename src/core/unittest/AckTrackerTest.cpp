@@ -43,14 +43,14 @@ struct SmartAckTracker {
     }
 
     //
-    // Returns TRUE if packet is a duplicate.
+    // Returns true if packet is a duplicate.
     //
-    BOOLEAN AddPacketNumber(uint64_t PacketNumber) {
-        return QuicAckTrackerAddPacketNumber(&tracker, PacketNumber);
+    bool AddPacketNumber(uint64_t PacketNumber) {
+        return QuicAckTrackerAddPacketNumber(&tracker, PacketNumber) != FALSE;
     }
 
-    BOOLEAN HasPacketsToAck() {
-        return QuicAckTrackerHasPacketsToAck(&tracker);
+    bool HasPacketsToAck() {
+        return QuicAckTrackerHasPacketsToAck(&tracker) != FALSE;
     }
 
     //
@@ -159,9 +159,9 @@ TEST(AckTrackerTest, AddPacketNumberNonDuplicate)
 {
     SmartAckTracker tracker;
 
-    BOOLEAN isDuplicate = tracker.AddPacketNumber(100);
+    bool isDuplicate = tracker.AddPacketNumber(100);
 
-    ASSERT_EQ(isDuplicate, FALSE);
+    ASSERT_EQ(isDuplicate, false);
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 1u);
 }
 
@@ -170,18 +170,18 @@ TEST(AckTrackerTest, AddPacketNumberNonDuplicate)
 //
 // Scenario: Add the same packet number twice.
 //
-// Assertions: First call returns FALSE (new), second call returns TRUE (duplicate).
+// Assertions: First call returns false (new), second call returns true (duplicate).
 // Range size remains 1 after duplicate.
 //
 TEST(AckTrackerTest, AddPacketNumberDuplicate)
 {
     SmartAckTracker tracker;
 
-    BOOLEAN firstAdd = tracker.AddPacketNumber(100);
-    BOOLEAN secondAdd = tracker.AddPacketNumber(100);
+    bool firstAdd = tracker.AddPacketNumber(100);
+    bool secondAdd = tracker.AddPacketNumber(100);
 
-    ASSERT_EQ(firstAdd, FALSE);
-    ASSERT_EQ(secondAdd, TRUE);
+    ASSERT_EQ(firstAdd, false);
+    ASSERT_EQ(secondAdd, true);
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 1u);
 }
 
@@ -197,9 +197,9 @@ TEST(AckTrackerTest, AddMultipleSequentialPackets)
 {
     SmartAckTracker tracker;
 
-    ASSERT_EQ(tracker.AddPacketNumber(100), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(101), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(102), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(100), false);
+    ASSERT_EQ(tracker.AddPacketNumber(101), false);
+    ASSERT_EQ(tracker.AddPacketNumber(102), false);
 
     // Sequential packets should merge into one range
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 1u);
@@ -217,11 +217,11 @@ TEST(AckTrackerTest, AddOutOfOrderPackets)
 {
     SmartAckTracker tracker;
 
-    ASSERT_EQ(tracker.AddPacketNumber(100), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(102), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(100), false);
+    ASSERT_EQ(tracker.AddPacketNumber(102), false);
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 2u); // Two separate ranges
 
-    ASSERT_EQ(tracker.AddPacketNumber(101), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(101), false);
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 1u); // Merged into one range
 }
 
@@ -236,34 +236,34 @@ TEST(AckTrackerTest, AddPacketsWithGaps)
 {
     SmartAckTracker tracker;
 
-    ASSERT_EQ(tracker.AddPacketNumber(100), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(105), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(110), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(100), false);
+    ASSERT_EQ(tracker.AddPacketNumber(105), false);
+    ASSERT_EQ(tracker.AddPacketNumber(110), false);
 
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 3u);
 }
 
 //
-// Test: QuicAckTrackerHasPacketsToAck returns FALSE for empty tracker.
+// Test: QuicAckTrackerHasPacketsToAck returns false for empty tracker.
 //
 // Scenario: Check HasPacketsToAck on a freshly initialized tracker.
 //
-// Assertions: Returns FALSE since no packets have been added to ACK range.
+// Assertions: Returns false since no packets have been added to ACK range.
 //
 TEST(AckTrackerTest, HasPacketsToAckEmpty)
 {
     SmartAckTracker tracker;
 
-    ASSERT_EQ(tracker.HasPacketsToAck(), FALSE);
+    ASSERT_EQ(tracker.HasPacketsToAck(), false);
 }
 
 //
-// Test: QuicAckTrackerHasPacketsToAck returns TRUE when packets are pending.
+// Test: QuicAckTrackerHasPacketsToAck returns true when packets are pending.
 //
 // Scenario: Add packets to the ACK range, then check HasPacketsToAck.
 //
-// Assertions: Returns TRUE when PacketNumbersToAck is non-empty and
-// AlreadyWrittenAckFrame is FALSE.
+// Assertions: Returns true when PacketNumbersToAck is non-empty and
+// AlreadyWrittenAckFrame is false.
 //
 TEST(AckTrackerTest, HasPacketsToAckWithPackets)
 {
@@ -271,33 +271,33 @@ TEST(AckTrackerTest, HasPacketsToAckWithPackets)
 
     tracker.AddToAckRange(100);
 
-    ASSERT_EQ(tracker.HasPacketsToAck(), TRUE);
+    ASSERT_EQ(tracker.HasPacketsToAck(), true);
 }
 
 //
-// Test: QuicAckTrackerHasPacketsToAck returns FALSE after ACK frame written.
+// Test: QuicAckTrackerHasPacketsToAck returns false after ACK frame written.
 //
 // Scenario: Add packets, set AlreadyWrittenAckFrame = TRUE, check result.
 //
-// Assertions: Returns FALSE even though packets exist, because ACK was written.
+// Assertions: Returns false even though packets exist, because ACK was written.
 //
 TEST(AckTrackerTest, HasPacketsToAckAfterFrameWritten)
 {
     SmartAckTracker tracker;
 
     tracker.AddToAckRange(100);
-    ASSERT_EQ(tracker.HasPacketsToAck(), TRUE);
+    ASSERT_EQ(tracker.HasPacketsToAck(), true);
 
     tracker.tracker.AlreadyWrittenAckFrame = TRUE;
-    ASSERT_EQ(tracker.HasPacketsToAck(), FALSE);
+    ASSERT_EQ(tracker.HasPacketsToAck(), false);
 }
 
 //
-// Test: QuicAckTrackerDidHitReorderingThreshold returns FALSE when threshold is 0.
+// Test: QuicAckTrackerDidHitReorderingThreshold returns false when threshold is 0.
 //
 // Scenario: Set threshold to 0 (disables reordering detection).
 //
-// Assertions: Always returns FALSE regardless of packet ranges.
+// Assertions: Always returns false regardless of packet ranges.
 //
 TEST(AckTrackerTest, ReorderingThresholdZeroReturnsFalse)
 {
@@ -311,11 +311,11 @@ TEST(AckTrackerTest, ReorderingThresholdZeroReturnsFalse)
 }
 
 //
-// Test: QuicAckTrackerDidHitReorderingThreshold returns FALSE for single range.
+// Test: QuicAckTrackerDidHitReorderingThreshold returns false for single range.
 //
 // Scenario: Only one contiguous range exists (no gaps).
 //
-// Assertions: Returns FALSE because at least 2 ranges needed for reordering.
+// Assertions: Returns false because at least 2 ranges needed for reordering.
 //
 TEST(AckTrackerTest, ReorderingThresholdSingleRangeReturnsFalse)
 {
@@ -449,9 +449,9 @@ TEST(AckTrackerTest, AddLargePacketNumbers)
 
     uint64_t largeNum = UINT64_MAX - 1000;
 
-    ASSERT_EQ(tracker.AddPacketNumber(largeNum), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(largeNum + 1), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(largeNum), TRUE); // Duplicate
+    ASSERT_EQ(tracker.AddPacketNumber(largeNum), false);
+    ASSERT_EQ(tracker.AddPacketNumber(largeNum + 1), false);
+    ASSERT_EQ(tracker.AddPacketNumber(largeNum), true); // Duplicate
 
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 1u);
 }
@@ -497,7 +497,7 @@ TEST(AckTrackerTest, MultipleResets)
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 0u);
 
     // Verify tracker still works after multiple resets
-    ASSERT_EQ(tracker.AddPacketNumber(200), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(200), false);
     ASSERT_EQ(tracker.GetReceivedRangeSize(), 1u);
 }
 
@@ -514,15 +514,15 @@ TEST(AckTrackerTest, AddPacketsAfterReset)
     SmartAckTracker tracker;
 
     // Add and verify
-    ASSERT_EQ(tracker.AddPacketNumber(100), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(100), TRUE);
+    ASSERT_EQ(tracker.AddPacketNumber(100), false);
+    ASSERT_EQ(tracker.AddPacketNumber(100), true);
 
     // Reset
     tracker.Reset();
 
     // Same packet number is now new again
-    ASSERT_EQ(tracker.AddPacketNumber(100), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(100), TRUE);
+    ASSERT_EQ(tracker.AddPacketNumber(100), false);
+    ASSERT_EQ(tracker.AddPacketNumber(100), true);
 }
 
 //
@@ -530,7 +530,7 @@ TEST(AckTrackerTest, AddPacketsAfterReset)
 //
 // Scenario: Test exact threshold boundary conditions.
 //
-// Assertions: Returns FALSE when gap == threshold - 1, TRUE when gap == threshold.
+// Assertions: Returns false when gap == threshold - 1, true when gap == threshold.
 //
 TEST(AckTrackerTest, ReorderingThresholdBoundary)
 {
@@ -544,12 +544,12 @@ TEST(AckTrackerTest, ReorderingThresholdBoundary)
     tracker.AddToAckRange(4);
     tracker.tracker.LargestPacketNumberAcknowledged = 0;
 
-    // With threshold=4, gap=3 < 4, should be FALSE
+    // With threshold=4, gap=3 < 4, should be false
     ASSERT_EQ(QuicAckTrackerDidHitReorderingThreshold(&tracker.tracker, 4), FALSE);
 
     // Add packet 5 to increase gap to 4
     tracker.AddToAckRange(5);
-    // Gap = 5 - 1 = 4 >= 4, should be TRUE
+    // Gap = 5 - 1 = 4 >= 4, should be true
     ASSERT_EQ(QuicAckTrackerDidHitReorderingThreshold(&tracker.tracker, 4), TRUE);
 }
 
@@ -565,20 +565,20 @@ TEST(AckTrackerTest, InterleavedAddAndDuplicateCheck)
     SmartAckTracker tracker;
 
     // Add some packets
-    ASSERT_EQ(tracker.AddPacketNumber(10), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(20), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(30), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(10), false);
+    ASSERT_EQ(tracker.AddPacketNumber(20), false);
+    ASSERT_EQ(tracker.AddPacketNumber(30), false);
 
     // Check duplicates
-    ASSERT_EQ(tracker.AddPacketNumber(20), TRUE);
-    ASSERT_EQ(tracker.AddPacketNumber(10), TRUE);
-    ASSERT_EQ(tracker.AddPacketNumber(30), TRUE);
+    ASSERT_EQ(tracker.AddPacketNumber(20), true);
+    ASSERT_EQ(tracker.AddPacketNumber(10), true);
+    ASSERT_EQ(tracker.AddPacketNumber(30), true);
 
     // Add new packet
-    ASSERT_EQ(tracker.AddPacketNumber(15), FALSE);
+    ASSERT_EQ(tracker.AddPacketNumber(15), false);
 
     // Check new and old duplicates
-    ASSERT_EQ(tracker.AddPacketNumber(15), TRUE);
-    ASSERT_EQ(tracker.AddPacketNumber(25), FALSE);
-    ASSERT_EQ(tracker.AddPacketNumber(25), TRUE);
+    ASSERT_EQ(tracker.AddPacketNumber(15), true);
+    ASSERT_EQ(tracker.AddPacketNumber(25), false);
+    ASSERT_EQ(tracker.AddPacketNumber(25), true);
 }
