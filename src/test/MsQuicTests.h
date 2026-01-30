@@ -550,13 +550,9 @@ QuicTestReceiveResumeNoData(
     _In_ QUIC_RECEIVE_RESUME_SHUTDOWN_TYPE ShutdownType
     );
 
-struct FamilyArgs2 {
-    int Family;
-};
-
 void
 QuicTestAckSendDelay(
-    const FamilyArgs2& Params
+    _In_ int Family
     );
 
 typedef enum QUIC_ABORT_RECEIVE_TYPE {
@@ -1420,15 +1416,3 @@ struct QUIC_RUN_CONNECTION_POOL_CREATE_PARAMS {
     // int - Family
 
 #define QUIC_MAX_IOCTL_FUNC_CODE 138
-
-// Generic IOCTL for invoking functions 
-
-struct QUIC_RUN_TEST_REQUEST {
-    char FunctionName[256];
-    uint32_t ParameterSize;
-    // Followed by ParameterSize bytes of parameters
-};
-
-#define IOCTL_QUIC_RUN_TEST \
-    QUIC_CTL_CODE(0x0fff, METHOD_BUFFERED, FILE_WRITE_DATA)
-    // QUIC_RUN_TEST_REQUEST

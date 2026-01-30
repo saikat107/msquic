@@ -2346,11 +2346,9 @@ private:
 
 void
 QuicTestAckSendDelay(
-    const FamilyArgs2& Params
+    _In_ int Family
     )
 {
-    int Family = Params.Family;
-
     //
     // Validates that a server eventually sends acks in response to a non-ack eliciting packet.
     //
@@ -3005,7 +3003,7 @@ QuicTestNthPacketDrop(
         CONTINUE_ON_FAIL(Stream.GetInitStatus());
 
         CONTINUE_ON_FAIL(Stream.Send(&Buffer, 1, QUIC_SEND_FLAG_START | QUIC_SEND_FLAG_FIN));
-        TEST_TRUE(RecvContext.ServerStreamShutdown.WaitTimeout(4000));
+        TEST_TRUE(RecvContext.ServerStreamShutdown.WaitTimeout(2000));
         if (RecvContext.Failure || !LossHelper.Dropped() ||
             CxPlatTimeDiff64(StartTime, CxPlatTimeUs64()) > S_TO_US(TimeOutS)) {
             StopRunning = true;

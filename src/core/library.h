@@ -40,20 +40,6 @@ typedef struct QUIC_HANDLE {
 
 } QUIC_HANDLE;
 
-#if DEBUG
-
-typedef enum QUIC_DBG_OBJECT_TYPE {
-    QUIC_DBG_OBJECT_TYPE_STREAM,
-    QUIC_DBG_OBJECT_TYPE_MAX
-} QUIC_DBG_OBJECT_TYPE;
-
-typedef struct QUIC_DBG_OBJECT_TRACKER {
-    CXPLAT_LIST_ENTRY List;
-    uint32_t Count;
-} QUIC_DBG_OBJECT_TRACKER;
-
-#endif // DEBUG
-
 //
 // Represents the storage for global library state.
 //
@@ -310,19 +296,6 @@ typedef struct QUIC_LIBRARY {
     // The worker pool
     //
     CXPLAT_WORKER_POOL* WorkerPool;
-
-#if DEBUG
-    //
-    // Lock for debug operations.
-    //
-    CXPLAT_DISPATCH_LOCK DbgLock;
-
-    //
-    // Debug object trackers. These contain lists of objects throughout their
-    // entire lifetimes.
-    //
-    QUIC_DBG_OBJECT_TRACKER DbgObjectTrackers[QUIC_DBG_OBJECT_TYPE_MAX];
-#endif
 
 } QUIC_LIBRARY;
 
@@ -639,36 +612,6 @@ QUIC_STATUS
 QuicLibrarySetRetryKeyConfig(
     _In_ const QUIC_STATELESS_RETRY_CONFIG* Config
     );
-
-#if DEBUG
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-void
-QuicLibraryInitializeDbg(
-    void
-    );
-
-_IRQL_requires_max_(PASSIVE_LEVEL)
-void
-QuicLibraryUninitializeDbg(
-    void
-    );
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-void
-QuicLibraryTrackDbgObject(
-    QUIC_DBG_OBJECT_TYPE Type,
-    CXPLAT_LIST_ENTRY* ObjectEntry
-    );
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-void
-QuicLibraryUntrackDbgObject(
-    QUIC_DBG_OBJECT_TYPE Type,
-    CXPLAT_LIST_ENTRY* ObjectEntry
-    );
-
-#endif // DEBUG
 
 #if defined(__cplusplus)
 }

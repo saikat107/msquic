@@ -5,7 +5,5 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<EnablePreviewFeatures>true</EnablePreviewFeatures>
-		<!-- Enable invariant globalization to avoid ICU dependency in minimal containers -->
-		<InvariantGlobalization>true</InvariantGlobalization>
 	</PropertyGroup>
 </Project>

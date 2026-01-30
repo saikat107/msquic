@@ -386,9 +386,3 @@ _site
 
 # packaging artifacts
 APKBUILD
-
-# Temporary package download folder by validation script
-msquic-packages/
-
-# CodeQL build artifacts
-_codeql_build_dir/

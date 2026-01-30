@@ -477,28 +477,9 @@ typedef struct CXPLAT_WORKER_POOL CXPLAT_WORKER_POOL;
 // Worker pool API used for driving execution contexts
 //
 
-//
-// Different references on a worker pool.
-//
-typedef enum CXPLAT_WORKER_POOL_REF {
-
-    CXPLAT_WORKER_POOL_REF_EXTERNAL,    // Created by ExecutionCreate
-    CXPLAT_WORKER_POOL_REF_LIBRARY,     // Created by MsQuic
-    CXPLAT_WORKER_POOL_REF_EPOLL,
-    CXPLAT_WORKER_POOL_REF_IOURING,
-    CXPLAT_WORKER_POOL_REF_KQUEUE,
-    CXPLAT_WORKER_POOL_REF_RAW,
-    CXPLAT_WORKER_POOL_REF_WINSOCK,
-    CXPLAT_WORKER_POOL_REF_TOOL,
-
-    CXPLAT_WORKER_POOL_REF_COUNT
-
-} CXPLAT_WORKER_POOL_REF;
-
 CXPLAT_WORKER_POOL*
 CxPlatWorkerPoolCreate(
-    _In_opt_ QUIC_GLOBAL_EXECUTION_CONFIG* Config,
-    _In_ CXPLAT_WORKER_POOL_REF RefType
+    _In_opt_ QUIC_GLOBAL_EXECUTION_CONFIG* Config
     );
 
 _Success_(return != NULL)
@@ -511,8 +492,7 @@ CxPlatWorkerPoolCreateExternal(
 
 void
 CxPlatWorkerPoolDelete(
-    _In_opt_ CXPLAT_WORKER_POOL* WorkerPool,
-    _In_ CXPLAT_WORKER_POOL_REF RefType
+    _In_opt_ CXPLAT_WORKER_POOL* WorkerPool
     );
 
 uint32_t
@@ -522,14 +502,12 @@ CxPlatWorkerPoolGetCount(
 
 BOOLEAN
 CxPlatWorkerPoolAddRef(
-    _In_ CXPLAT_WORKER_POOL* WorkerPool,
-    _In_ CXPLAT_WORKER_POOL_REF RefType
+    _In_ CXPLAT_WORKER_POOL* WorkerPool
     );
 
 void
 CxPlatWorkerPoolRelease(
-    _In_ CXPLAT_WORKER_POOL* WorkerPool,
-    _In_ CXPLAT_WORKER_POOL_REF RefType
+    _In_ CXPLAT_WORKER_POOL* WorkerPool
     );
 
 uint32_t
