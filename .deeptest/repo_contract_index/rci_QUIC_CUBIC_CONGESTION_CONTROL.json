@@ -1,0 +1,208 @@
+{
+  "component": "QUIC_CUBIC_CONGESTION_CONTROL",
+  "source": "src/core/cubic.c",
+  "header": "src/core/cubic.h",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "signature": "void CubicCongestionControlInitialize(QUIC_CONGESTION_CONTROL* Cc, const QUIC_SETTINGS_INTERNAL* Settings)",
+      "declaration": "cubic.h:119-124",
+      "summary": "Initializes the CUBIC congestion control algorithm with settings",
+      "preconditions": ["Cc must be non-null and part of valid QUIC_CONNECTION", "Settings must be non-null with valid fields"],
+      "postconditions": ["All function pointers set", "CongestionWindow initialized", "SlowStartThreshold = UINT32_MAX"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe, must be called during connection setup"
+    },
+    {
+      "name": "CubicCongestionControlCanSend",
+      "signature": "BOOLEAN CubicCongestionControlCanSend(QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Returns TRUE if more bytes can be sent",
+      "preconditions": ["Cc must be initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    },
+    {
+      "name": "CubicCongestionControlSetExemption",
+      "signature": "void CubicCongestionControlSetExemption(QUIC_CONGESTION_CONTROL* Cc, uint8_t NumPackets)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Sets bypass packet count for congestion control",
+      "preconditions": ["Cc must be initialized"],
+      "postconditions": ["Exemptions = NumPackets"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlReset",
+      "signature": "void CubicCongestionControlReset(QUIC_CONGESTION_CONTROL* Cc, BOOLEAN FullReset)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Resets CUBIC state",
+      "preconditions": ["Cc must be initialized"],
+      "postconditions": ["SlowStartThreshold = UINT32_MAX", "IsInRecovery = FALSE"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlGetSendAllowance",
+      "signature": "uint32_t CubicCongestionControlGetSendAllowance(QUIC_CONGESTION_CONTROL* Cc, uint64_t TimeSinceLastSend, BOOLEAN TimeSinceLastSendValid)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Returns bytes allowed to send with pacing",
+      "preconditions": ["Cc must be initialized"],
+      "postconditions": ["LastSendAllowance may be updated"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlOnDataSent",
+      "signature": "void CubicCongestionControlOnDataSent(QUIC_CONGESTION_CONTROL* Cc, uint32_t NumRetransmittableBytes)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Called when data is sent",
+      "preconditions": ["Cc must be initialized"],
+      "postconditions": ["BytesInFlight += NumRetransmittableBytes"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlOnDataInvalidated",
+      "signature": "BOOLEAN CubicCongestionControlOnDataInvalidated(QUIC_CONGESTION_CONTROL* Cc, uint32_t NumRetransmittableBytes)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Removes bytes from in-flight without loss",
+      "preconditions": ["BytesInFlight >= NumRetransmittableBytes"],
+      "postconditions": ["BytesInFlight -= NumRetransmittableBytes"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlOnDataAcknowledged",
+      "signature": "BOOLEAN CubicCongestionControlOnDataAcknowledged(QUIC_CONGESTION_CONTROL* Cc, const QUIC_ACK_EVENT* AckEvent)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Called when data is acknowledged, grows window",
+      "preconditions": ["Cc initialized", "AckEvent valid"],
+      "postconditions": ["BytesInFlight decreased", "CongestionWindow may grow"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlOnDataLost",
+      "signature": "void CubicCongestionControlOnDataLost(QUIC_CONGESTION_CONTROL* Cc, const QUIC_LOSS_EVENT* LossEvent)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Called when loss detected, reduces window",
+      "preconditions": ["Cc initialized", "LossEvent valid"],
+      "postconditions": ["Window reduced", "IsInRecovery = TRUE"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlOnEcn",
+      "signature": "void CubicCongestionControlOnEcn(QUIC_CONGESTION_CONTROL* Cc, const QUIC_ECN_EVENT* EcnEvent)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Called when ECN signal received",
+      "preconditions": ["Cc initialized", "EcnEvent valid"],
+      "postconditions": ["Window reduced if new congestion event"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlOnSpuriousCongestionEvent",
+      "signature": "BOOLEAN CubicCongestionControlOnSpuriousCongestionEvent(QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Reverts congestion window if loss was spurious",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["Previous state restored if in recovery"],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlLogOutFlowStatus",
+      "signature": "void CubicCongestionControlLogOutFlowStatus(const QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Logs outflow statistics",
+      "preconditions": ["Cc initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    },
+    {
+      "name": "CubicCongestionControlGetExemptions",
+      "signature": "uint8_t CubicCongestionControlGetExemptions(const QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Returns current exemptions count",
+      "preconditions": ["Cc initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    },
+    {
+      "name": "CubicCongestionControlGetBytesInFlightMax",
+      "signature": "uint32_t CubicCongestionControlGetBytesInFlightMax(const QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Returns maximum bytes in flight observed",
+      "preconditions": ["Cc initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    },
+    {
+      "name": "CubicCongestionControlGetCongestionWindow",
+      "signature": "uint32_t CubicCongestionControlGetCongestionWindow(const QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Returns current congestion window",
+      "preconditions": ["Cc initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    },
+    {
+      "name": "CubicCongestionControlIsAppLimited",
+      "signature": "BOOLEAN CubicCongestionControlIsAppLimited(const QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Returns whether app is limiting (always FALSE)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    },
+    {
+      "name": "CubicCongestionControlSetAppLimited",
+      "signature": "void CubicCongestionControlSetAppLimited(QUIC_CONGESTION_CONTROL* Cc)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Marks as app-limited (no-op for CUBIC)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": [],
+      "error_codes": [],
+      "thread_safety": "Not thread-safe"
+    },
+    {
+      "name": "CubicCongestionControlGetNetworkStatistics",
+      "signature": "void CubicCongestionControlGetNetworkStatistics(const QUIC_CONNECTION* Connection, const QUIC_CONGESTION_CONTROL* Cc, QUIC_NETWORK_STATISTICS* NetworkStatistics)",
+      "declaration": "congestion_control.h (function pointer)",
+      "summary": "Populates network statistics",
+      "preconditions": ["All parameters valid"],
+      "postconditions": ["NetworkStatistics populated"],
+      "error_codes": [],
+      "thread_safety": "Thread-safe read-only"
+    }
+  ],
+  "state_machine": {
+    "name": "HyStart",
+    "states": ["HYSTART_NOT_STARTED", "HYSTART_ACTIVE", "HYSTART_DONE"],
+    "transitions": [
+      {"from": "HYSTART_NOT_STARTED", "to": "HYSTART_ACTIVE", "trigger": "delay increase detected in OnDataAcknowledged"},
+      {"from": "HYSTART_ACTIVE", "to": "HYSTART_NOT_STARTED", "trigger": "RTT decreased"},
+      {"from": "HYSTART_ACTIVE", "to": "HYSTART_DONE", "trigger": "ConservativeSlowStartRounds reaches 0"},
+      {"from": "any", "to": "HYSTART_DONE", "trigger": "congestion event (OnDataLost, OnEcn)"},
+      {"from": "any", "to": "HYSTART_NOT_STARTED", "trigger": "Reset"}
+    ]
+  },
+  "type_invariants": {
+    "QUIC_CONGESTION_CONTROL_CUBIC": {
+      "invariants": [
+        "CongestionWindow > 0",
+        "SlowStartThreshold > 0",
+        "BytesInFlightMax >= BytesInFlight / 2 initially",
+        "If IsInRecovery: HasHadCongestionEvent must be TRUE"
+      ]
+    }
+  }
+}
