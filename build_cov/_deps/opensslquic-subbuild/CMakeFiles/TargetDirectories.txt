@@ -1,0 +1,3 @@
+/home/runner/work/msquic/msquic/build_cov/_deps/opensslquic-subbuild/CMakeFiles/opensslquic-populate.dir
+/home/runner/work/msquic/msquic/build_cov/_deps/opensslquic-subbuild/CMakeFiles/edit_cache.dir
+/home/runner/work/msquic/msquic/build_cov/_deps/opensslquic-subbuild/CMakeFiles/rebuild_cache.dir

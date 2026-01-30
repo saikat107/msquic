@@ -1,0 +1,4 @@
+# Hashes of file build rules.
+0c691cf80980a6b0c216b27e7b2fc23f _deps/opensslquic-build/CMakeFiles/OpenSSL_Target
+d88be4fb72e5747e092b4c36a2cf78e7 _deps/opensslquic-build/quictls/lib/libssl.a
+22190d4848096546db96003cea60c20e _deps/opensslquic-build/submodules/quictls/Makefile
