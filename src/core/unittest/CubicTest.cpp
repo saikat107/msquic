@@ -1674,7 +1674,7 @@ TEST(CubicTest, HyStartDisabledBehavior)
     // Simulate multiple ACKs that would normally trigger HyStart transitions
     Cubic->BytesInFlight = 5000;
 
-    for (int i = 0; i < 10; i++) {
+    for (uint32_t i = 0; i < 10; i++) {
         QUIC_ACK_EVENT AckEvent;
         CxPlatZeroMemory(&AckEvent, sizeof(AckEvent));
         AckEvent.TimeNow = CxPlatTimeUs64() + i * 10000;
