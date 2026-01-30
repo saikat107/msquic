@@ -15,6 +15,11 @@ Abstract:
 #endif
 
 //
+// CUBIC constants for test assertions (matching cubic.c definitions)
+//
+#define TEN_TIMES_BETA_CUBIC 7
+
+//
 // Helper to create a minimal valid connection for testing CUBIC initialization.
 // Uses a real QUIC_CONNECTION structure to ensure proper memory layout when
 // QuicCongestionControlGetConnection() does CXPLAT_CONTAINING_RECORD pointer arithmetic.
@@ -69,8 +74,10 @@ TEST(CubicTest, InitializeComprehensive)
     ASSERT_EQ(Cubic->SendIdleTimeoutMs, 1000u);
     ASSERT_EQ(Cubic->SlowStartThreshold, UINT32_MAX);
 
-    // Verify congestion window initialized
-    ASSERT_GT(Cubic->CongestionWindow, 0u);
+    // Verify congestion window initialized to InitialWindowPackets * DatagramPayloadLength
+    uint16_t DatagramPayloadLength = QuicPathGetDatagramPayloadSize(&Connection.Paths[0]);
+    uint32_t ExpectedWindow = Settings.InitialWindowPackets * DatagramPayloadLength;
+    ASSERT_EQ(Cubic->CongestionWindow, ExpectedWindow);
     ASSERT_EQ(Cubic->BytesInFlightMax, Cubic->CongestionWindow / 2);
 
     // Verify all 17 function pointers are set
@@ -122,16 +129,23 @@ TEST(CubicTest, InitializeBoundaries)
     Settings.SendIdleTimeoutMs = 0;
     InitializeMockConnection(Connection, QUIC_DPLPMTUD_MIN_MTU);
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-    ASSERT_GT(Connection.CongestionControl.Cubic.CongestionWindow, 0u);
+    // CongestionWindow should be calculated as InitialWindowPackets * DatagramPayloadLength
+    uint16_t DatagramPayloadLength = QuicPathGetDatagramPayloadSize(&Connection.Paths[0]);
+    uint32_t ExpectedWindow = Settings.InitialWindowPackets * DatagramPayloadLength;
+    ASSERT_EQ(Connection.CongestionControl.Cubic.CongestionWindow, ExpectedWindow);
     ASSERT_EQ(Connection.CongestionControl.Cubic.InitialWindowPackets, 1u);
     ASSERT_EQ(Connection.CongestionControl.Cubic.SendIdleTimeoutMs, 0u);
+    // BytesInFlightMax should be half the congestion window
+    ASSERT_EQ(Connection.CongestionControl.Cubic.BytesInFlightMax, ExpectedWindow / 2);
 
     // Test maximum MTU with maximum window and timeout
     Settings.InitialWindowPackets = 1000;
     Settings.SendIdleTimeoutMs = UINT32_MAX;
     InitializeMockConnection(Connection, 65535);
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-    ASSERT_GT(Connection.CongestionControl.Cubic.CongestionWindow, 0u);
+    DatagramPayloadLength = QuicPathGetDatagramPayloadSize(&Connection.Paths[0]);
+    ExpectedWindow = Settings.InitialWindowPackets * DatagramPayloadLength;
+    ASSERT_EQ(Connection.CongestionControl.Cubic.CongestionWindow, ExpectedWindow);
     ASSERT_EQ(Connection.CongestionControl.Cubic.InitialWindowPackets, 1000u);
     ASSERT_EQ(Connection.CongestionControl.Cubic.SendIdleTimeoutMs, UINT32_MAX);
 
@@ -140,7 +154,9 @@ TEST(CubicTest, InitializeBoundaries)
     Settings.SendIdleTimeoutMs = 1000;
     InitializeMockConnection(Connection, 500);
     CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
-    ASSERT_GT(Connection.CongestionControl.Cubic.CongestionWindow, 0u);
+    DatagramPayloadLength = QuicPathGetDatagramPayloadSize(&Connection.Paths[0]);
+    ExpectedWindow = Settings.InitialWindowPackets * DatagramPayloadLength;
+    ASSERT_EQ(Connection.CongestionControl.Cubic.CongestionWindow, ExpectedWindow);
 }
 
 //
@@ -391,12 +407,15 @@ TEST(CubicTest, GetterFunctions)
     // Test GetBytesInFlightMax
     uint32_t MaxBytes = Connection.CongestionControl.QuicCongestionControlGetBytesInFlightMax(&Connection.CongestionControl);
     ASSERT_EQ(MaxBytes, Cubic->BytesInFlightMax);
-    ASSERT_EQ(MaxBytes, Cubic->CongestionWindow / 2);
+    // BytesInFlightMax is initialized to CongestionWindow / 2
+    uint16_t DatagramPayloadLength = QuicPathGetDatagramPayloadSize(&Connection.Paths[0]);
+    uint32_t ExpectedWindow = Settings.InitialWindowPackets * DatagramPayloadLength;
+    ASSERT_EQ(MaxBytes, ExpectedWindow / 2);
 
     // Test GetCongestionWindow
     uint32_t CongestionWindow = Connection.CongestionControl.QuicCongestionControlGetCongestionWindow(&Connection.CongestionControl);
     ASSERT_EQ(CongestionWindow, Cubic->CongestionWindow);
-    ASSERT_GT(CongestionWindow, 0u);
+    ASSERT_EQ(CongestionWindow, ExpectedWindow);
 }
 
 //
@@ -583,8 +602,14 @@ TEST(CubicTest, OnDataAcknowledged_BasicAck)
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
         &Connection.CongestionControl,
         &AckEvent);
-    // Verify window may have grown (depends on slow start vs congestion avoidance)
-    ASSERT_GE(Cubic->CongestionWindow, InitialWindow);
+    // Verify window grew (in slow start, window grows by bytes acknowledged divided by growth divisor)
+    // Since HyStartEnabled=TRUE but we haven't triggered HyStart, divisor is 1
+    ASSERT_GT(Cubic->CongestionWindow, InitialWindow);
+    // In slow start with divisor=1, window should grow by approximately BytesAcked
+    uint32_t ExpectedWindowGrowth = AckEvent.NumRetransmittableBytes / Cubic->CWndSlowStartGrowthDivisor;
+    ASSERT_GE(Cubic->CongestionWindow, InitialWindow + ExpectedWindowGrowth);
+    // Verify BytesInFlight was decremented
+    ASSERT_EQ(Cubic->BytesInFlight, 0u);
 }
 
 //
@@ -626,10 +651,14 @@ TEST(CubicTest, OnDataLost_WindowReduction)
         &Connection.CongestionControl,
         &LossEvent);
 
-    // Verify window was reduced (CUBIC multiplicative decrease)
-    ASSERT_LT(Cubic->CongestionWindow, InitialWindow);
-    ASSERT_GT(Cubic->SlowStartThreshold, 0u);
-    ASSERT_LT(Cubic->SlowStartThreshold, UINT32_MAX);
+    // Verify window was reduced (CUBIC multiplicative decrease = window * 0.7)
+    uint32_t ExpectedReducedWindow = InitialWindow * TEN_TIMES_BETA_CUBIC / 10;
+    ASSERT_EQ(Cubic->CongestionWindow, ExpectedReducedWindow);
+    // Slow start threshold should be set to the reduced window
+    ASSERT_EQ(Cubic->SlowStartThreshold, ExpectedReducedWindow);
+    // Verify recovery state
+    ASSERT_TRUE(Cubic->IsInRecovery);
+    ASSERT_TRUE(Cubic->HasHadCongestionEvent);
 }
 
 //
@@ -669,8 +698,14 @@ TEST(CubicTest, OnEcn_CongestionSignal)
         &Connection.CongestionControl,
         &EcnEvent);
 
-    // Verify window was reduced due to ECN congestion signal
-    ASSERT_LE(Cubic->CongestionWindow, InitialWindow);
+    // Verify window was reduced due to ECN congestion signal (multiplicative decrease = window * 0.7)
+    uint32_t ExpectedReducedWindow = InitialWindow * TEN_TIMES_BETA_CUBIC / 10;
+    ASSERT_EQ(Cubic->CongestionWindow, ExpectedReducedWindow);
+    // Verify recovery state was entered
+    ASSERT_TRUE(Cubic->IsInRecovery);
+    ASSERT_TRUE(Cubic->HasHadCongestionEvent);
+    // Verify slow start threshold was set
+    ASSERT_EQ(Cubic->SlowStartThreshold, ExpectedReducedWindow);
 }
 
 //
@@ -707,10 +742,12 @@ TEST(CubicTest, GetNetworkStatistics_RetrieveStats)
         &Connection.CongestionControl,
         &NetworkStats);
 
-    // Verify statistics were populated
+    // Verify statistics were populated with expected values
     ASSERT_EQ(NetworkStats.CongestionWindow, Cubic->CongestionWindow);
     ASSERT_EQ(NetworkStats.BytesInFlight, Cubic->BytesInFlight);
-    ASSERT_GT(NetworkStats.SmoothedRTT, 0u);
+    ASSERT_EQ(NetworkStats.BytesInFlight, 8000u);
+    // SmoothedRTT should match the path's SmoothedRtt
+    ASSERT_EQ(NetworkStats.SmoothedRTT, Connection.Paths[0].SmoothedRtt);
 }
 
 //
@@ -752,15 +789,23 @@ TEST(CubicTest, MiscFunctions_APICompleteness)
         &Connection.CongestionControl);
     ASSERT_EQ(CongestionWindow, Cubic->CongestionWindow);
 
-    // Test LogOutFlowStatus
+    // Test LogOutFlowStatus - verify internal state remains unchanged
+    uint32_t WindowBefore = Cubic->CongestionWindow;
+    uint32_t BytesInFlightBefore = Cubic->BytesInFlight;
     Connection.CongestionControl.QuicCongestionControlLogOutFlowStatus(
         &Connection.CongestionControl);
-    // No assertion needed - just ensure it doesn't crash
+    // Verify state is unchanged after logging
+    ASSERT_EQ(Cubic->CongestionWindow, WindowBefore);
+    ASSERT_EQ(Cubic->BytesInFlight, BytesInFlightBefore);
 
-    // Test OnSpuriousCongestionEvent
+    // Test OnSpuriousCongestionEvent - without prior congestion event, should be no-op
+    WindowBefore = Cubic->CongestionWindow;
+    BOOLEAN RecoveryBefore = Cubic->IsInRecovery;
     Connection.CongestionControl.QuicCongestionControlOnSpuriousCongestionEvent(
         &Connection.CongestionControl);
-    // No assertion needed - just ensure it doesn't crash
+    // Without a prior congestion event, state should remain unchanged
+    ASSERT_EQ(Cubic->CongestionWindow, WindowBefore);
+    ASSERT_EQ(Cubic->IsInRecovery, RecoveryBefore);
 }
 
 //
@@ -979,11 +1024,15 @@ TEST(CubicTest, Pacing_SlowStartWindowEstimation)
     // Send data to have bytes in flight
     Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, Cubic->CongestionWindow / 2);
 
+    uint32_t AvailableWindow = Cubic->CongestionWindow - Cubic->BytesInFlight;
     uint32_t Allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
         &Connection.CongestionControl, 10000, TRUE);
 
-    // Should get some allowance based on slow start estimation (2x window)
+    // In slow start with pacing, allowance should be based on pacing rate
+    // Pacing uses EstimatedWnd = 2 * CongestionWindow for slow start
     ASSERT_GT(Allowance, 0u);
+    // Allowance should not exceed the available window
+    ASSERT_LE(Allowance, AvailableWindow);
 
     // Now test the case where estimated window (2x current) exceeds threshold
     // Set threshold to be between current window and 2x current window
@@ -995,8 +1044,10 @@ TEST(CubicTest, Pacing_SlowStartWindowEstimation)
     uint32_t Allowance2 = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
         &Connection.CongestionControl, 10000, TRUE);
 
-    // Should still get some allowance, but clamped calculation
+    // Should still get allowance, but based on clamped estimation
     ASSERT_GT(Allowance2, 0u);
+    // Clamped estimation means potentially smaller allowance
+    ASSERT_LE(Allowance2, Allowance);
 }
 
 //
@@ -1054,12 +1105,19 @@ TEST(CubicTest, Pacing_CongestionAvoidanceEstimation)
 
     Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
 
+    // Verify we're in congestion avoidance and out of recovery
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+
     // Now in congestion avoidance and out of recovery
+    uint32_t AvailableWindow = Cubic->CongestionWindow - Cubic->BytesInFlight;
     uint32_t Allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
         &Connection.CongestionControl, 10000, TRUE);
 
-    // Should get allowance based on congestion avoidance estimation (1.25x)
+    // Should get allowance based on congestion avoidance estimation (1.25x window)
     ASSERT_GT(Allowance, 0u);
+    // Allowance should not exceed the available window
+    ASSERT_LE(Allowance, AvailableWindow);
 }
 
 //
@@ -1160,8 +1218,11 @@ TEST(CubicTest, CongestionAvoidance_AIMDvsCubicSelection)
         &Connection.CongestionControl,
         &AckEvent);
 
-    // Window should grow (either AIMD or CUBIC path)
-    ASSERT_GE(Cubic->CongestionWindow, WindowBefore);
+    // Window should grow in congestion avoidance mode
+    // In congestion avoidance, window grows by at least 1 byte per ACK (AIMD accumulator contributes)
+    ASSERT_GT(Cubic->CongestionWindow, WindowBefore);
+    // Verify we're still in congestion avoidance (window >= threshold)
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
 }
 
 //
@@ -1225,10 +1286,14 @@ TEST(CubicTest, AIMD_AccumulatorBelowWindowPrior)
         &Connection.CongestionControl,
         &AckEvent);
 
-    // Accumulator should have bytes added (verifies AIMD logic executed)
-    // Note: May be 0 if still in slow start or not enough bytes accumulated
-    // Just verify no crash - AIMD logic is complex and depends on internal state
-    ASSERT_GE(Cubic->AimdAccumulator, 0u);
+    // Verify we exited recovery (LargestAck >= RecoverySentPacketNumber)
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    // Verify we're in congestion avoidance mode (window >= threshold)
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+    // AIMD accumulator should have been updated with the acknowledged bytes
+    // In AIMD below WindowPrior path, accumulator increases by BytesAcked/2
+    // Since this ACK exits recovery and processes AIMD, verify accumulator is set
+    ASSERT_GT(Cubic->AimdAccumulator, 0u);
 }
 
 //
@@ -1291,9 +1356,13 @@ TEST(CubicTest, AIMD_AccumulatorAboveWindowPrior)
         &Connection.CongestionControl,
         &AckEvent);
 
-    // Accumulator should have full bytes added
-    // Note: AIMD logic depends on complex internal state, just verify >= 0
-    ASSERT_GE(Cubic->AimdAccumulator, 0u);
+    // Verify we exited recovery
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    // Verify we're in congestion avoidance mode
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+    // AIMD accumulator should have been updated with full bytes
+    // In AIMD above WindowPrior path, accumulator increases by BytesAcked
+    ASSERT_GT(Cubic->AimdAccumulator, 0u);
 }
 
 //
