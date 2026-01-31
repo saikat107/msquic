@@ -3,6 +3,8 @@
 
 set(SOURCES
     main.cpp
+    AckTrackerTest.cpp
+    BbrTest.cpp
     CubicTest.cpp
     FrameTest.cpp
     PacketNumberTest.cpp
