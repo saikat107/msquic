@@ -1,0 +1,127 @@
+{
+  "component": "CXPLAT_TOEPLITZ",
+  "source_file": "src/platform/toeplitz.c",
+  "header_file": "src/inc/quic_toeplitz.h",
+  "public_apis": [
+    {
+      "name": "CxPlatToeplitzHashInitialize",
+      "signature": "void CxPlatToeplitzHashInitialize(_Inout_ CXPLAT_TOEPLITZ_HASH* Toeplitz)",
+      "location": "toeplitz.c:58-132",
+      "purpose": "Initialize Toeplitz hash lookup tables from key",
+      "preconditions": [
+        "Toeplitz != NULL",
+        "Toeplitz->HashKey populated with valid key bytes",
+        "Toeplitz->InputSize set to valid CXPLAT_TOEPLITZ_INPUT_SIZE (36 or 38)",
+        "HashKey has at least (InputSize + 4) bytes"
+      ],
+      "postconditions": [
+        "LookupTableArray fully populated with pre-computed values",
+        "Structure ready for CxPlatToeplitzHashCompute calls"
+      ],
+      "side_effects": ["Mutates Toeplitz->LookupTableArray"],
+      "error_handling": "None - void function, relies on caller preconditions",
+      "thread_safety": "NOT thread-safe for same object, safe for different objects"
+    },
+    {
+      "name": "CxPlatToeplitzHashCompute",
+      "signature": "uint32_t CxPlatToeplitzHashCompute(_In_ const CXPLAT_TOEPLITZ_HASH* Toeplitz, _In_reads_(HashInputLength) const uint8_t* HashInput, _In_ uint32_t HashInputLength, _In_ uint32_t HashInputOffset)",
+      "location": "toeplitz.c:139-167",
+      "purpose": "Compute 32-bit Toeplitz hash over input bytes",
+      "preconditions": [
+        "Toeplitz != NULL and initialized",
+        "HashInput != NULL if HashInputLength > 0",
+        "HashInputLength + HashInputOffset <= Toeplitz->InputSize"
+      ],
+      "postconditions": [
+        "Returns 32-bit hash value",
+        "Deterministic - same inputs produce same output",
+        "XOR composition property holds"
+      ],
+      "side_effects": ["None - pure read-only function"],
+      "error_handling": "Debug assertions for bounds, undefined behavior on violation",
+      "thread_safety": "Thread-safe - read-only operation"
+    },
+    {
+      "name": "CxPlatToeplitzHashComputeAddr",
+      "signature": "QUIC_INLINE void CxPlatToeplitzHashComputeAddr(_In_ const CXPLAT_TOEPLITZ_HASH* Toeplitz, _In_ const QUIC_ADDR* Addr, _Inout_ uint32_t* Key, _Out_ uint32_t* Offset)",
+      "location": "quic_toeplitz.h:98-132",
+      "purpose": "Compute hash for single QUIC address (port + IP)",
+      "preconditions": [
+        "Toeplitz != NULL and initialized",
+        "Addr != NULL with valid address family",
+        "Key != NULL",
+        "Offset != NULL"
+      ],
+      "postconditions": [
+        "*Key XORed with hash of address",
+        "*Offset set to 6 (IPv4) or 18 (IPv6)"
+      ],
+      "side_effects": ["Modifies *Key and *Offset"],
+      "error_handling": "None",
+      "thread_safety": "Thread-safe with thread-local Key/Offset"
+    },
+    {
+      "name": "CxPlatToeplitzHashComputeRss",
+      "signature": "QUIC_INLINE void CxPlatToeplitzHashComputeRss(_In_ const CXPLAT_TOEPLITZ_HASH* Toeplitz, _In_ const QUIC_ADDR* SrcAddr, _In_ const QUIC_ADDR* DestAddr, _Inout_ uint32_t* Key, _Out_ uint32_t* Offset)",
+      "location": "quic_toeplitz.h:137-196",
+      "purpose": "Compute RSS-style hash over source and dest addresses",
+      "preconditions": [
+        "Toeplitz != NULL and initialized",
+        "SrcAddr != NULL and DestAddr != NULL",
+        "SrcAddr and DestAddr have SAME address family",
+        "Key != NULL",
+        "Offset != NULL"
+      ],
+      "postconditions": [
+        "*Key XORed with RSS hash",
+        "*Offset set to 12 (IPv4) or 36 (IPv6)"
+      ],
+      "side_effects": ["Modifies *Key and *Offset"],
+      "error_handling": "CXPLAT_FRE_ASSERT enforces same address family",
+      "thread_safety": "Thread-safe with thread-local Key/Offset"
+    }
+  ],
+  "types": [
+    {
+      "name": "CXPLAT_TOEPLITZ_HASH",
+      "fields": [
+        "CXPLAT_TOEPLITZ_LOOKUP_TABLE LookupTableArray[76]",
+        "uint8_t HashKey[42]",
+        "CXPLAT_TOEPLITZ_INPUT_SIZE InputSize"
+      ],
+      "invariants": [
+        "Before init: HashKey populated, InputSize set to 36 or 38",
+        "After init: LookupTableArray[0..InputSize*2-1] contains valid tables",
+        "Each Table[i] has 16 valid 32-bit entries",
+        "Once initialized, structure is immutable"
+      ]
+    }
+  ],
+  "constants": [
+    {"name": "CXPLAT_TOEPLITZ_INPUT_SIZE_IP", "value": 36},
+    {"name": "CXPLAT_TOEPLITZ_INPUT_SIZE_QUIC", "value": 38},
+    {"name": "CXPLAT_TOEPLITZ_INPUT_SIZE_MAX", "value": 38},
+    {"name": "NIBBLES_PER_BYTE", "value": 2},
+    {"name": "BITS_PER_NIBBLE", "value": 4},
+    {"name": "CXPLAT_TOEPLITZ_OUPUT_SIZE", "value": 4},
+    {"name": "CXPLAT_TOEPLITZ_KEY_SIZE_MAX", "value": 42},
+    {"name": "CXPLAT_TOEPLITZ_KEY_SIZE_MIN", "value": 40},
+    {"name": "CXPLAT_TOEPLITZ_LOOKUP_TABLE_SIZE", "value": 16},
+    {"name": "CXPLAT_TOEPLITZ_LOOKUP_TABLE_COUNT_MAX", "value": 76}
+  ],
+  "test_scenarios": [
+    "Initialization with valid key and InputSize",
+    "Hash computation with known test vectors (IPv4 RSS)",
+    "Hash computation with known test vectors (IPv6 RSS)",
+    "Hash determinism - same input produces same output",
+    "XOR composition property validation",
+    "ComputeAddr for IPv4 address",
+    "ComputeAddr for IPv6 address",
+    "ComputeRss for IPv4 addresses",
+    "ComputeRss for IPv6 addresses",
+    "Hash computation with zero-length input",
+    "Hash computation with maximum offset",
+    "Hash computation with various input lengths",
+    "Boundary testing for InputSize limits"
+  ]
+}
