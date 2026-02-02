@@ -1,0 +1,366 @@
+{
+  "test_file": "/home/runner/work/msquic/msquic/src/platform/unittest/ToeplitzTest.cpp",
+  "test_name": "DirectHashComputation",
+  "language": "cpp",
+  "start_line": 179,
+  "end_line": 212,
+  "line_count": 34,
+  "lines": [
+    {
+      "number": 179,
+      "content": "TEST_F(ToeplitzTest, DirectHashComputation)"
+    },
+    {
+      "number": 180,
+      "content": "{"
+    },
+    {
+      "number": 181,
+      "content": "    static const QuicBuffer KeyBuffer(HashKey);"
+    },
+    {
+      "number": 182,
+      "content": "    "
+    },
+    {
+      "number": 183,
+      "content": "    // Initialize Toeplitz hash with standard RSS key"
+    },
+    {
+      "number": 184,
+      "content": "    CXPLAT_TOEPLITZ_HASH ToeplitzHash{};"
+    },
+    {
+      "number": 185,
+      "content": "    CxPlatCopyMemory(ToeplitzHash.HashKey, KeyBuffer.Data, KeyBuffer.Length);"
+    },
+    {
+      "number": 186,
+      "content": "    ToeplitzHash.InputSize = CXPLAT_TOEPLITZ_INPUT_SIZE_IP;"
+    },
+    {
+      "number": 187,
+      "content": "    CxPlatToeplitzHashInitialize(&ToeplitzHash);"
+    },
+    {
+      "number": 188,
+      "content": "    "
+    },
+    {
+      "number": 189,
+      "content": "    // Test 1: Hash a simple 4-byte sequence"
+    },
+    {
+      "number": 190,
+      "content": "    uint8_t Input1[] = {0x01, 0x02, 0x03, 0x04};"
+    },
+    {
+      "number": 191,
+      "content": "    uint32_t Hash1 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+    },
+    {
+      "number": 192,
+      "content": "    "
+    },
+    {
+      "number": 193,
+      "content": "    // The hash should be deterministic - computing it again should give the same result"
+    },
+    {
+      "number": 194,
+      "content": "    uint32_t Hash1Again = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+    },
+    {
+      "number": 195,
+      "content": "    ASSERT_EQ(Hash1, Hash1Again);"
+    },
+    {
+      "number": 196,
+      "content": "    "
+    },
+    {
+      "number": 197,
+      "content": "    // Test 2: Hash a different sequence should give different result"
+    },
+    {
+      "number": 198,
+      "content": "    uint8_t Input2[] = {0x05, 0x06, 0x07, 0x08};"
+    },
+    {
+      "number": 199,
+      "content": "    uint32_t Hash2 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input2, sizeof(Input2), 0);"
+    },
+    {
+      "number": 200,
+      "content": "    ASSERT_NE(Hash1, Hash2);"
+    },
+    {
+      "number": 201,
+      "content": "    "
+    },
+    {
+      "number": 202,
+      "content": "    // Test 3: Hash all zeros"
+    },
+    {
+      "number": 203,
+      "content": "    uint8_t Input3[] = {0x00, 0x00, 0x00, 0x00};"
+    },
+    {
+      "number": 204,
+      "content": "    uint32_t Hash3 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input3, sizeof(Input3), 0);"
+    },
+    {
+      "number": 205,
+      "content": "    ASSERT_EQ(Hash3, 0u); // Hash of all zeros should be zero"
+    },
+    {
+      "number": 206,
+      "content": "    "
+    },
+    {
+      "number": 207,
+      "content": "    // Test 4: Hash all ones"
+    },
+    {
+      "number": 208,
+      "content": "    uint8_t Input4[] = {0xFF, 0xFF, 0xFF, 0xFF};"
+    },
+    {
+      "number": 209,
+      "content": "    uint32_t Hash4 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input4, sizeof(Input4), 0);"
+    },
+    {
+      "number": 210,
+      "content": "    ASSERT_NE(Hash4, 0u); // Hash of all ones should be non-zero"
+    },
+    {
+      "number": 211,
+      "content": "    ASSERT_NE(Hash4, 0xFFFFFFFFu); // And not all ones either"
+    },
+    {
+      "number": 212,
+      "content": "}"
+    }
+  ],
+  "patterns": {
+    "numbers_found": [
+      {
+        "line": 190,
+        "value": "1",
+        "context": "uint8_t Input1[] = {0x01, 0x02, 0x03, 0x04};"
+      },
+      {
+        "line": 190,
+        "value": "2",
+        "context": "uint8_t Input1[] = {0x01, 0x02, 0x03, 0x04};"
+      },
+      {
+        "line": 190,
+        "value": "3",
+        "context": "uint8_t Input1[] = {0x01, 0x02, 0x03, 0x04};"
+      },
+      {
+        "line": 190,
+        "value": "4",
+        "context": "uint8_t Input1[] = {0x01, 0x02, 0x03, 0x04};"
+      },
+      {
+        "line": 191,
+        "value": "0",
+        "context": "uint32_t Hash1 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+      },
+      {
+        "line": 194,
+        "value": "0",
+        "context": "uint32_t Hash1Again = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+      },
+      {
+        "line": 198,
+        "value": "5",
+        "context": "uint8_t Input2[] = {0x05, 0x06, 0x07, 0x08};"
+      },
+      {
+        "line": 198,
+        "value": "6",
+        "context": "uint8_t Input2[] = {0x05, 0x06, 0x07, 0x08};"
+      },
+      {
+        "line": 198,
+        "value": "7",
+        "context": "uint8_t Input2[] = {0x05, 0x06, 0x07, 0x08};"
+      },
+      {
+        "line": 198,
+        "value": "8",
+        "context": "uint8_t Input2[] = {0x05, 0x06, 0x07, 0x08};"
+      },
+      {
+        "line": 199,
+        "value": "0",
+        "context": "uint32_t Hash2 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input2, sizeof(Input2), 0);"
+      },
+      {
+        "line": 203,
+        "value": "0",
+        "context": "uint8_t Input3[] = {0x00, 0x00, 0x00, 0x00};"
+      },
+      {
+        "line": 203,
+        "value": "0",
+        "context": "uint8_t Input3[] = {0x00, 0x00, 0x00, 0x00};"
+      },
+      {
+        "line": 203,
+        "value": "0",
+        "context": "uint8_t Input3[] = {0x00, 0x00, 0x00, 0x00};"
+      },
+      {
+        "line": 203,
+        "value": "0",
+        "context": "uint8_t Input3[] = {0x00, 0x00, 0x00, 0x00};"
+      },
+      {
+        "line": 204,
+        "value": "0",
+        "context": "uint32_t Hash3 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input3, sizeof(Input3), 0);"
+      },
+      {
+        "line": 209,
+        "value": "0",
+        "context": "uint32_t Hash4 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input4, sizeof(Input4), 0);"
+      }
+    ],
+    "function_calls": [
+      {
+        "line": 179,
+        "name": "TEST_F",
+        "context": "TEST_F(ToeplitzTest, DirectHashComputation)"
+      },
+      {
+        "line": 181,
+        "name": "KeyBuffer",
+        "context": "static const QuicBuffer KeyBuffer(HashKey);"
+      },
+      {
+        "line": 185,
+        "name": "CxPlatCopyMemory",
+        "context": "CxPlatCopyMemory(ToeplitzHash.HashKey, KeyBuffer.Data, KeyBuffer.Length);"
+      },
+      {
+        "line": 187,
+        "name": "CxPlatToeplitzHashInitialize",
+        "context": "CxPlatToeplitzHashInitialize(&ToeplitzHash);"
+      },
+      {
+        "line": 191,
+        "name": "CxPlatToeplitzHashCompute",
+        "context": "uint32_t Hash1 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+      },
+      {
+        "line": 194,
+        "name": "CxPlatToeplitzHashCompute",
+        "context": "uint32_t Hash1Again = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+      },
+      {
+        "line": 195,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Hash1, Hash1Again);"
+      },
+      {
+        "line": 199,
+        "name": "CxPlatToeplitzHashCompute",
+        "context": "uint32_t Hash2 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input2, sizeof(Input2), 0);"
+      },
+      {
+        "line": 200,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Hash1, Hash2);"
+      },
+      {
+        "line": 204,
+        "name": "CxPlatToeplitzHashCompute",
+        "context": "uint32_t Hash3 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input3, sizeof(Input3), 0);"
+      },
+      {
+        "line": 205,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Hash3, 0u); // Hash of all zeros should be zero"
+      },
+      {
+        "line": 209,
+        "name": "CxPlatToeplitzHashCompute",
+        "context": "uint32_t Hash4 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input4, sizeof(Input4), 0);"
+      },
+      {
+        "line": 210,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Hash4, 0u); // Hash of all ones should be non-zero"
+      },
+      {
+        "line": 211,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Hash4, 0xFFFFFFFFu); // And not all ones either"
+      }
+    ],
+    "keywords_found": [
+      {
+        "line": 181,
+        "keyword": "static",
+        "context": "static const QuicBuffer KeyBuffer(HashKey);"
+      }
+    ]
+  },
+  "comments": {
+    "description_comment": {
+      "lines": [
+        173,
+        174,
+        175,
+        176,
+        177,
+        178
+      ],
+      "text": " Test: DirectHashComputation Scenario: Tests CxPlatToeplitzHashCompute directly with raw byte arrays Method: Initialize Toeplitz structure, then hash known byte sequences Assertions: Hash output matches expected values computed from Toeplitz algorithm "
+    },
+    "inline_comments": [
+      {
+        "line": 183,
+        "content": "Initialize Toeplitz hash with standard RSS key"
+      },
+      {
+        "line": 189,
+        "content": "Test 1: Hash a simple 4-byte sequence"
+      },
+      {
+        "line": 193,
+        "content": "The hash should be deterministic - computing it again should give the same result"
+      },
+      {
+        "line": 197,
+        "content": "Test 2: Hash a different sequence should give different result"
+      },
+      {
+        "line": 202,
+        "content": "Test 3: Hash all zeros"
+      },
+      {
+        "line": 205,
+        "content": "Hash of all zeros should be zero"
+      },
+      {
+        "line": 207,
+        "content": "Test 4: Hash all ones"
+      },
+      {
+        "line": 210,
+        "content": "Hash of all ones should be non-zero"
+      },
+      {
+        "line": 211,
+        "content": "And not all ones either"
+      }
+    ],
+    "block_comments": []
+  }
+}
