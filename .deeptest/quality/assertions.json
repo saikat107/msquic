@@ -1,0 +1,244 @@
+{
+  "test_file": "/home/runner/work/msquic/msquic/src/platform/unittest/ToeplitzTest.cpp",
+  "test_name": "DirectHashComputation",
+  "language": "cpp",
+  "start_line": 179,
+  "end_line": 212,
+  "total_assertions": 10,
+  "assertion_types_present": {
+    "exception_handling": false,
+    "null_checks": false,
+    "equality_checks": true,
+    "boundary_checks": false
+  },
+  "assertions": [
+    {
+      "line": 195,
+      "code": "ASSERT_EQ(Hash1, Hash1Again);",
+      "type": "equality",
+      "operands": [
+        "Hash1",
+        "Hash1Again"
+      ]
+    },
+    {
+      "line": 200,
+      "code": "ASSERT_NE(Hash1, Hash2);",
+      "type": "inequality",
+      "operands": [
+        "Hash1",
+        "Hash2"
+      ]
+    },
+    {
+      "line": 205,
+      "code": "ASSERT_EQ(Hash3, 0u); // Hash of all zeros should be zero",
+      "type": "equality",
+      "operands": [
+        "Hash3",
+        "0u"
+      ]
+    },
+    {
+      "line": 210,
+      "code": "ASSERT_NE(Hash4, 0u); // Hash of all ones should be non-zero",
+      "type": "inequality",
+      "operands": [
+        "Hash4",
+        "0u"
+      ]
+    },
+    {
+      "line": 211,
+      "code": "ASSERT_NE(Hash4, 0xFFFFFFFFu); // And not all ones either",
+      "type": "inequality",
+      "operands": [
+        "Hash4",
+        "0xFFFFFFFFu"
+      ]
+    },
+    {
+      "line": 195,
+      "code": "ASSERT_EQ(Hash1, Hash1Again);",
+      "type": "equality",
+      "operands": [
+        "Hash1",
+        "Hash1Again"
+      ]
+    },
+    {
+      "line": 200,
+      "code": "ASSERT_NE(Hash1, Hash2);",
+      "type": "inequality",
+      "operands": [
+        "Hash1",
+        "Hash2"
+      ]
+    },
+    {
+      "line": 205,
+      "code": "ASSERT_EQ(Hash3, 0u); // Hash of all zeros should be zero",
+      "type": "equality",
+      "operands": [
+        "Hash3",
+        "0u"
+      ]
+    },
+    {
+      "line": 210,
+      "code": "ASSERT_NE(Hash4, 0u); // Hash of all ones should be non-zero",
+      "type": "inequality",
+      "operands": [
+        "Hash4",
+        "0u"
+      ]
+    },
+    {
+      "line": 211,
+      "code": "ASSERT_NE(Hash4, 0xFFFFFFFFu); // And not all ones either",
+      "type": "inequality",
+      "operands": [
+        "Hash4",
+        "0xFFFFFFFFu"
+      ]
+    }
+  ],
+  "raw_lines": [
+    {
+      "number": 179,
+      "content": "TEST_F(ToeplitzTest, DirectHashComputation)"
+    },
+    {
+      "number": 180,
+      "content": "{"
+    },
+    {
+      "number": 181,
+      "content": "    static const QuicBuffer KeyBuffer(HashKey);"
+    },
+    {
+      "number": 182,
+      "content": "    "
+    },
+    {
+      "number": 183,
+      "content": "    // Initialize Toeplitz hash with standard RSS key"
+    },
+    {
+      "number": 184,
+      "content": "    CXPLAT_TOEPLITZ_HASH ToeplitzHash{};"
+    },
+    {
+      "number": 185,
+      "content": "    CxPlatCopyMemory(ToeplitzHash.HashKey, KeyBuffer.Data, KeyBuffer.Length);"
+    },
+    {
+      "number": 186,
+      "content": "    ToeplitzHash.InputSize = CXPLAT_TOEPLITZ_INPUT_SIZE_IP;"
+    },
+    {
+      "number": 187,
+      "content": "    CxPlatToeplitzHashInitialize(&ToeplitzHash);"
+    },
+    {
+      "number": 188,
+      "content": "    "
+    },
+    {
+      "number": 189,
+      "content": "    // Test 1: Hash a simple 4-byte sequence"
+    },
+    {
+      "number": 190,
+      "content": "    uint8_t Input1[] = {0x01, 0x02, 0x03, 0x04};"
+    },
+    {
+      "number": 191,
+      "content": "    uint32_t Hash1 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+    },
+    {
+      "number": 192,
+      "content": "    "
+    },
+    {
+      "number": 193,
+      "content": "    // The hash should be deterministic - computing it again should give the same result"
+    },
+    {
+      "number": 194,
+      "content": "    uint32_t Hash1Again = CxPlatToeplitzHashCompute(&ToeplitzHash, Input1, sizeof(Input1), 0);"
+    },
+    {
+      "number": 195,
+      "content": "    ASSERT_EQ(Hash1, Hash1Again);"
+    },
+    {
+      "number": 196,
+      "content": "    "
+    },
+    {
+      "number": 197,
+      "content": "    // Test 2: Hash a different sequence should give different result"
+    },
+    {
+      "number": 198,
+      "content": "    uint8_t Input2[] = {0x05, 0x06, 0x07, 0x08};"
+    },
+    {
+      "number": 199,
+      "content": "    uint32_t Hash2 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input2, sizeof(Input2), 0);"
+    },
+    {
+      "number": 200,
+      "content": "    ASSERT_NE(Hash1, Hash2);"
+    },
+    {
+      "number": 201,
+      "content": "    "
+    },
+    {
+      "number": 202,
+      "content": "    // Test 3: Hash all zeros"
+    },
+    {
+      "number": 203,
+      "content": "    uint8_t Input3[] = {0x00, 0x00, 0x00, 0x00};"
+    },
+    {
+      "number": 204,
+      "content": "    uint32_t Hash3 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input3, sizeof(Input3), 0);"
+    },
+    {
+      "number": 205,
+      "content": "    ASSERT_EQ(Hash3, 0u); // Hash of all zeros should be zero"
+    },
+    {
+      "number": 206,
+      "content": "    "
+    },
+    {
+      "number": 207,
+      "content": "    // Test 4: Hash all ones"
+    },
+    {
+      "number": 208,
+      "content": "    uint8_t Input4[] = {0xFF, 0xFF, 0xFF, 0xFF};"
+    },
+    {
+      "number": 209,
+      "content": "    uint32_t Hash4 = CxPlatToeplitzHashCompute(&ToeplitzHash, Input4, sizeof(Input4), 0);"
+    },
+    {
+      "number": 210,
+      "content": "    ASSERT_NE(Hash4, 0u); // Hash of all ones should be non-zero"
+    },
+    {
+      "number": 211,
+      "content": "    ASSERT_NE(Hash4, 0xFFFFFFFFu); // And not all ones either"
+    },
+    {
+      "number": 212,
+      "content": "}"
+    }
+  ]
+}
