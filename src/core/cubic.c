@@ -79,6 +79,18 @@ QuicConnLogCubic(
         Cubic->WindowLastMax);
 }
 
+//
+// Standalone helper for ad-hoc CUBIC state logging.
+//
+_IRQL_requires_max_(DISPATCH_LEVEL)
+void
+QuicConnLogCubicDebug(
+    _In_ const QUIC_CONNECTION* const Connection
+    )
+{
+    QuicConnLogCubic(Connection);
+}
+
 void
 CubicCongestionHyStartChangeState(
     _In_ QUIC_CONGESTION_CONTROL* Cc,
