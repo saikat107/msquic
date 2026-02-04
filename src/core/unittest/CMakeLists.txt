@@ -5,6 +5,7 @@ set(SOURCES
     main.cpp
     CubicTest.cpp
     FrameTest.cpp
+    PacketBuilderTest.cpp
     PacketNumberTest.cpp
     PartitionTest.cpp
     RangeTest.cpp
@@ -27,8 +28,11 @@ set_property(TARGET msquiccoretest APPEND PROPERTY BUILD_RPATH "$ORIGIN")
 
 target_link_libraries(msquiccoretest msquic)
 
+# Always link core library for packet_builder and other core component tests
+target_link_libraries(msquiccoretest core msquic_platform)
+
 if (BUILD_SHARED_LIBS)
-    target_link_libraries(msquiccoretest core msquic_platform)
+    # Additional linkage if needed for shared builds
 endif()
 
 target_link_libraries(msquiccoretest inc gtest warnings logging base_link)
