@@ -1,0 +1,143 @@
+{
+  "component": "QUIC_CONGESTION_CONTROL_CUBIC",
+  "source_file": "src/core/cubic.c",
+  "header_file": "src/core/cubic.h",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "const QUIC_SETTINGS_INTERNAL* Settings"],
+      "preconditions": ["Cc != NULL", "Settings != NULL", "Cc embedded in valid QUIC_CONNECTION"],
+      "postconditions": ["All function pointers set", "CongestionWindow > 0", "SlowStartThreshold = UINT32_MAX"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlCanSend",
+      "return_type": "BOOLEAN",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["Returns TRUE if can send"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlSetExemption",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "uint8_t NumPackets"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlReset",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "BOOLEAN FullReset"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlGetSendAllowance",
+      "return_type": "uint32_t",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "uint64_t TimeSinceLastSend", "BOOLEAN TimeSinceLastSendValid"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataSent",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "uint32_t NumRetransmittableBytes"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataInvalidated",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "uint32_t NumRetransmittableBytes"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataAcknowledged",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "const QUIC_ACK_EVENT* AckEvent"],
+      "tested": "partial",
+      "coverage_gaps": ["CUBIC congestion avoidance growth", "AIMD friendliness", "HyStart RTT sampling", "Fast convergence"]
+    },
+    {
+      "name": "CubicCongestionControlOnDataLost",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "const QUIC_LOSS_EVENT* LossEvent"],
+      "tested": "partial",
+      "coverage_gaps": ["Persistent congestion", "Loss during recovery"]
+    },
+    {
+      "name": "CubicCongestionControlOnEcn",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "const QUIC_ECN_EVENT* EcnEvent"],
+      "tested": "partial"
+    },
+    {
+      "name": "CubicCongestionControlOnSpuriousCongestionEvent",
+      "return_type": "BOOLEAN",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": "basic",
+      "coverage_gaps": ["Spurious event after ECN (should fail)"]
+    },
+    {
+      "name": "CubicCongestionControlGetNetworkStatistics",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc", "QUIC_NETWORK_STATISTICS* Stats"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlGetExemptions",
+      "return_type": "uint8_t",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlGetBytesInFlightMax",
+      "return_type": "uint32_t",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlGetCongestionWindow",
+      "return_type": "uint32_t",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlIsAppLimited",
+      "return_type": "BOOLEAN",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": true
+    },
+    {
+      "name": "CubicCongestionControlSetAppLimited",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": "partial"
+    },
+    {
+      "name": "CubicCongestionControlLogOutFlowStatus",
+      "return_type": "void",
+      "parameters": ["QUIC_CONGESTION_CONTROL* Cc"],
+      "tested": true
+    }
+  ],
+  "state_machines": {
+    "congestion_control": {
+      "states": ["Initial", "SlowStart", "Recovery", "CongestionAvoidance", "PersistentCongestion"],
+      "transitions": [
+        {"from": "Initial", "to": "SlowStart", "via": "Initialize"},
+        {"from": "SlowStart", "to": "Recovery", "via": "OnDataLost/OnEcn"},
+        {"from": "SlowStart", "to": "CongestionAvoidance", "via": "Reach SlowStartThreshold"},
+        {"from": "Recovery", "to": "CongestionAvoidance", "via": "ACK > RecoverySentPacketNumber"},
+        {"from": "CongestionAvoidance", "to": "Recovery", "via": "OnDataLost/OnEcn"},
+        {"from": "Recovery", "to": "PersistentCongestion", "via": "Persistent loss detected"}
+      ]
+    },
+    "hystart": {
+      "states": ["HYSTART_NOT_STARTED", "HYSTART_ACTIVE", "HYSTART_DONE"],
+      "transitions": [
+        {"from": "NOT_STARTED", "to": "ACTIVE", "via": "Delay increase detected"},
+        {"from": "ACTIVE", "to": "DONE", "via": "Conservative rounds complete"},
+        {"from": "ACTIVE", "to": "NOT_STARTED", "via": "RTT decrease detected"}
+      ]
+    }
+  }
+}
