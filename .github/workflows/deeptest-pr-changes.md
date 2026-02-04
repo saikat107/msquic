@@ -52,10 +52,32 @@ engine:
           exit 1
         fi
 
-        echo "Fetching changed files for PR #$PR_NUMBER in $GITHUB_REPOSITORY"
-        ALL_FILES="$(gh api \"repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files\" --paginate --jq '.[].filename')"
+        API_URL="${GITHUB_API_URL:-https://api.github.com}"
+        echo "Fetching changed files for PR #$PR_NUMBER in $GITHUB_REPOSITORY via $API_URL"
 
-        echo "$ALL_FILES" > /tmp/changed_files_all.txt
+        : > /tmp/changed_files_all.txt
+        page=1
+        while :; do
+          resp="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100&page=$page")"
+
+          count="$(printf '%s' "$resp" | jq 'length')"
+          if [ "${count:-0}" -eq 0 ]; then
+            break
+          fi
+
+          printf '%s' "$resp" | jq -r '.[].filename' >> /tmp/changed_files_all.txt
+          page=$((page+1))
+        done
+
+        ALL_FILES="$(cat /tmp/changed_files_all.txt || true)"
+        if [ -z "$ALL_FILES" ]; then
+          echo "No files returned for PR #$PR_NUMBER" >&2
+          exit 1
+        fi
 
         FILTERED_FILES="$(printf '%s\n' "$ALL_FILES" \
           | grep -E "$INCLUDE_REGEX" \
@@ -82,9 +104,7 @@ engine:
         set -euo pipefail
         echo "Invoking DeepTest for PR #$PR_NUMBER (Run ID: $RUN_ID)"
 
-        CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt | tr '\n' '\r')"
-        # Convert back to newlines inside the prompt reliably
-        CHANGED_FILES_BULLETS="$(printf '%b' "${CHANGED_FILES_BULLETS//\r/\n}")"
+        CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
 
         gh copilot --agent DeepTest --allow-all-tools -p "You are generating tests for PR #$PR_NUMBER in $GITHUB_REPOSITORY.\n\nFocus on these changed files (filtered, up to $MAX_FILES):\n$CHANGED_FILES_BULLETS\n\nRequirements:\n- Follow MsQuic test patterns in src/test/. Prefer adding or updating focused tests for behavior changes.\n- Cover error paths and boundary conditions; avoid flaky timing-dependent tests.\n- Make minimal changes outside tests unless necessary for testability.\n- Create a PR with all test changes; include workflow run ID $RUN_ID in the PR title."
 safe-outputs:
