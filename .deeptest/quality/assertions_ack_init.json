@@ -1,0 +1,4170 @@
+{
+  "test_file": "src/core/unittest/AckTrackerTest.cpp",
+  "test_name": "AckTrackerTest.InitializeAndUninitialize",
+  "language": "cpp",
+  "start_line": 1,
+  "end_line": 639,
+  "total_assertions": 188,
+  "assertion_types_present": {
+    "exception_handling": false,
+    "null_checks": false,
+    "equality_checks": true,
+    "boundary_checks": true
+  },
+  "assertions": [
+    {
+      "line": 38,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 39,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 78,
+      "code": "ASSERT_GT(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "comparison",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 79,
+      "code": "ASSERT_GT(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "comparison",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 89,
+      "code": "ASSERT_EQ(Tracker.AckElicitingPacketsToAcknowledge, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.AckElicitingPacketsToAcknowledge",
+        "0u"
+      ]
+    },
+    {
+      "line": 90,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberAcknowledged, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberAcknowledged",
+        "0u"
+      ]
+    },
+    {
+      "line": 91,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberRecvTime, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberRecvTime",
+        "0u"
+      ]
+    },
+    {
+      "line": 92,
+      "code": "ASSERT_FALSE(Tracker.AlreadyWrittenAckFrame);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.AlreadyWrittenAckFrame"
+      ]
+    },
+    {
+      "line": 93,
+      "code": "ASSERT_FALSE(Tracker.NonZeroRecvECN);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.NonZeroRecvECN"
+      ]
+    },
+    {
+      "line": 94,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_0_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_0_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 95,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_1_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_1_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 96,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.CE_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.CE_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 97,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 98,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 118,
+      "code": "ASSERT_FALSE(IsDuplicate);",
+      "type": "boolean",
+      "operands": [
+        "IsDuplicate"
+      ]
+    },
+    {
+      "line": 123,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 126,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 127,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 128,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 129,
+      "code": "ASSERT_EQ(Max, 100u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "100u"
+      ]
+    },
+    {
+      "line": 148,
+      "code": "ASSERT_FALSE(FirstAdd);",
+      "type": "boolean",
+      "operands": [
+        "FirstAdd"
+      ]
+    },
+    {
+      "line": 154,
+      "code": "ASSERT_TRUE(SecondAdd);",
+      "type": "boolean",
+      "operands": [
+        "SecondAdd"
+      ]
+    },
+    {
+      "line": 159,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 177,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 178,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 101)"
+      ]
+    },
+    {
+      "line": 179,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 184,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 187,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 188,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 189,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 190,
+      "code": "ASSERT_EQ(Max, 102u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "102u"
+      ]
+    },
+    {
+      "line": 208,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 209,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 210,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 104));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 104)"
+      ]
+    },
+    {
+      "line": 215,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 3u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "3u"
+      ]
+    },
+    {
+      "line": 218,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 219,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 220,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 221,
+      "code": "ASSERT_EQ(Max, 104u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "104u"
+      ]
+    },
+    {
+      "line": 239,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 240,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 241,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 2u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "2u"
+      ]
+    },
+    {
+      "line": 246,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 101)"
+      ]
+    },
+    {
+      "line": 251,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 254,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 255,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 256,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 257,
+      "code": "ASSERT_EQ(Max, 102u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "102u"
+      ]
+    },
+    {
+      "line": 275,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 276,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 101)"
+      ]
+    },
+    {
+      "line": 277,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 282,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 285,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 286,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 287,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 288,
+      "code": "ASSERT_EQ(Max, 102u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "102u"
+      ]
+    },
+    {
+      "line": 306,
+      "code": "ASSERT_FALSE(QuicAckTrackerHasPacketsToAck(&Tracker));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerHasPacketsToAck(&Tracker)"
+      ]
+    },
+    {
+      "line": 330,
+      "code": "ASSERT_TRUE(QuicAckTrackerHasPacketsToAck(&Tracker));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerHasPacketsToAck(&Tracker)"
+      ]
+    },
+    {
+      "line": 354,
+      "code": "ASSERT_FALSE(QuicAckTrackerHasPacketsToAck(&Tracker));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerHasPacketsToAck(&Tracker)"
+      ]
+    },
+    {
+      "line": 372,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 0));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 0)"
+      ]
+    },
+    {
+      "line": 377,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 380,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 381,
+      "code": "ASSERT_EQ(Min, 0u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "0u"
+      ]
+    },
+    {
+      "line": 386,
+      "code": "ASSERT_TRUE(QuicAckTrackerAddPacketNumber(&Tracker, 0));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 0)"
+      ]
+    },
+    {
+      "line": 406,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber)"
+      ]
+    },
+    {
+      "line": 407,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber + 1));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber + 1)"
+      ]
+    },
+    {
+      "line": 412,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 415,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 416,
+      "code": "ASSERT_EQ(Max, LargePacketNumber + 1);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "LargePacketNumber + 1"
+      ]
+    },
+    {
+      "line": 436,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, BasePacket));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, BasePacket)"
+      ]
+    },
+    {
+      "line": 437,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, BasePacket + 1));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, BasePacket + 1)"
+      ]
+    },
+    {
+      "line": 442,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 448,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 449,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 481,
+      "code": "ASSERT_FALSE(Tracker.NonZeroRecvECN);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.NonZeroRecvECN"
+      ]
+    },
+    {
+      "line": 482,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_0_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_0_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 483,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_1_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_1_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 484,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.CE_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.CE_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 502,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 507,
+      "code": "ASSERT_TRUE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 517,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 547,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberRecvTime, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberRecvTime",
+        "0u"
+      ]
+    },
+    {
+      "line": 548,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberAcknowledged, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberAcknowledged",
+        "0u"
+      ]
+    },
+    {
+      "line": 549,
+      "code": "ASSERT_EQ(Tracker.AckElicitingPacketsToAcknowledge, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.AckElicitingPacketsToAcknowledge",
+        "0u"
+      ]
+    },
+    {
+      "line": 577,
+      "code": "ASSERT_FALSE(Tracker.AlreadyWrittenAckFrame);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.AlreadyWrittenAckFrame"
+      ]
+    },
+    {
+      "line": 578,
+      "code": "ASSERT_FALSE(Tracker.NonZeroRecvECN);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.NonZeroRecvECN"
+      ]
+    },
+    {
+      "line": 600,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, StartPacket + i));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, StartPacket + i)"
+      ]
+    },
+    {
+      "line": 606,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 609,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 610,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 611,
+      "code": "ASSERT_EQ(Min, StartPacket);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "StartPacket"
+      ]
+    },
+    {
+      "line": 612,
+      "code": "ASSERT_EQ(Max, StartPacket + Count - 1);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "StartPacket + Count - 1"
+      ]
+    },
+    {
+      "line": 630,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, i));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, i)"
+      ]
+    },
+    {
+      "line": 636,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 5u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "5u"
+      ]
+    },
+    {
+      "line": 38,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 39,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 78,
+      "code": "ASSERT_GT(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "comparison",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 79,
+      "code": "ASSERT_GT(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "comparison",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 89,
+      "code": "ASSERT_EQ(Tracker.AckElicitingPacketsToAcknowledge, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.AckElicitingPacketsToAcknowledge",
+        "0u"
+      ]
+    },
+    {
+      "line": 90,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberAcknowledged, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberAcknowledged",
+        "0u"
+      ]
+    },
+    {
+      "line": 91,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberRecvTime, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberRecvTime",
+        "0u"
+      ]
+    },
+    {
+      "line": 92,
+      "code": "ASSERT_FALSE(Tracker.AlreadyWrittenAckFrame);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.AlreadyWrittenAckFrame"
+      ]
+    },
+    {
+      "line": 93,
+      "code": "ASSERT_FALSE(Tracker.NonZeroRecvECN);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.NonZeroRecvECN"
+      ]
+    },
+    {
+      "line": 94,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_0_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_0_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 95,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_1_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_1_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 96,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.CE_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.CE_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 97,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 98,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 118,
+      "code": "ASSERT_FALSE(IsDuplicate);",
+      "type": "boolean",
+      "operands": [
+        "IsDuplicate"
+      ]
+    },
+    {
+      "line": 123,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 126,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 127,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 128,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 129,
+      "code": "ASSERT_EQ(Max, 100u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "100u"
+      ]
+    },
+    {
+      "line": 148,
+      "code": "ASSERT_FALSE(FirstAdd);",
+      "type": "boolean",
+      "operands": [
+        "FirstAdd"
+      ]
+    },
+    {
+      "line": 154,
+      "code": "ASSERT_TRUE(SecondAdd);",
+      "type": "boolean",
+      "operands": [
+        "SecondAdd"
+      ]
+    },
+    {
+      "line": 159,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 177,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 178,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 101)"
+      ]
+    },
+    {
+      "line": 179,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 184,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 187,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 188,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 189,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 190,
+      "code": "ASSERT_EQ(Max, 102u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "102u"
+      ]
+    },
+    {
+      "line": 208,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 209,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 210,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 104));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 104)"
+      ]
+    },
+    {
+      "line": 215,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 3u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "3u"
+      ]
+    },
+    {
+      "line": 218,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 219,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 220,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 221,
+      "code": "ASSERT_EQ(Max, 104u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "104u"
+      ]
+    },
+    {
+      "line": 239,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 240,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 241,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 2u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "2u"
+      ]
+    },
+    {
+      "line": 246,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 101)"
+      ]
+    },
+    {
+      "line": 251,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 254,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 255,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 256,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 257,
+      "code": "ASSERT_EQ(Max, 102u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "102u"
+      ]
+    },
+    {
+      "line": 275,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 102)"
+      ]
+    },
+    {
+      "line": 276,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 101)"
+      ]
+    },
+    {
+      "line": 277,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 282,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 285,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 286,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 287,
+      "code": "ASSERT_EQ(Min, 100u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "100u"
+      ]
+    },
+    {
+      "line": 288,
+      "code": "ASSERT_EQ(Max, 102u);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "102u"
+      ]
+    },
+    {
+      "line": 306,
+      "code": "ASSERT_FALSE(QuicAckTrackerHasPacketsToAck(&Tracker));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerHasPacketsToAck(&Tracker)"
+      ]
+    },
+    {
+      "line": 330,
+      "code": "ASSERT_TRUE(QuicAckTrackerHasPacketsToAck(&Tracker));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerHasPacketsToAck(&Tracker)"
+      ]
+    },
+    {
+      "line": 354,
+      "code": "ASSERT_FALSE(QuicAckTrackerHasPacketsToAck(&Tracker));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerHasPacketsToAck(&Tracker)"
+      ]
+    },
+    {
+      "line": 372,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 0));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 0)"
+      ]
+    },
+    {
+      "line": 377,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 380,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 381,
+      "code": "ASSERT_EQ(Min, 0u);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "0u"
+      ]
+    },
+    {
+      "line": 386,
+      "code": "ASSERT_TRUE(QuicAckTrackerAddPacketNumber(&Tracker, 0));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 0)"
+      ]
+    },
+    {
+      "line": 406,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber)"
+      ]
+    },
+    {
+      "line": 407,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber + 1));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber + 1)"
+      ]
+    },
+    {
+      "line": 412,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 415,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 416,
+      "code": "ASSERT_EQ(Max, LargePacketNumber + 1);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "LargePacketNumber + 1"
+      ]
+    },
+    {
+      "line": 436,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, BasePacket));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, BasePacket)"
+      ]
+    },
+    {
+      "line": 437,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, BasePacket + 1));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, BasePacket + 1)"
+      ]
+    },
+    {
+      "line": 442,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 448,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "0u"
+      ]
+    },
+    {
+      "line": 449,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersToAck)",
+        "0u"
+      ]
+    },
+    {
+      "line": 481,
+      "code": "ASSERT_FALSE(Tracker.NonZeroRecvECN);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.NonZeroRecvECN"
+      ]
+    },
+    {
+      "line": 482,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_0_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_0_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 483,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.ECT_1_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.ECT_1_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 484,
+      "code": "ASSERT_EQ(Tracker.ReceivedECN.CE_Count, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.ReceivedECN.CE_Count",
+        "0u"
+      ]
+    },
+    {
+      "line": 502,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 507,
+      "code": "ASSERT_TRUE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 517,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, 100)"
+      ]
+    },
+    {
+      "line": 547,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberRecvTime, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberRecvTime",
+        "0u"
+      ]
+    },
+    {
+      "line": 548,
+      "code": "ASSERT_EQ(Tracker.LargestPacketNumberAcknowledged, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.LargestPacketNumberAcknowledged",
+        "0u"
+      ]
+    },
+    {
+      "line": 549,
+      "code": "ASSERT_EQ(Tracker.AckElicitingPacketsToAcknowledge, 0u);",
+      "type": "equality",
+      "operands": [
+        "Tracker.AckElicitingPacketsToAcknowledge",
+        "0u"
+      ]
+    },
+    {
+      "line": 577,
+      "code": "ASSERT_FALSE(Tracker.AlreadyWrittenAckFrame);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.AlreadyWrittenAckFrame"
+      ]
+    },
+    {
+      "line": 578,
+      "code": "ASSERT_FALSE(Tracker.NonZeroRecvECN);",
+      "type": "boolean",
+      "operands": [
+        "Tracker.NonZeroRecvECN"
+      ]
+    },
+    {
+      "line": 600,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, StartPacket + i));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, StartPacket + i)"
+      ]
+    },
+    {
+      "line": 606,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "1u"
+      ]
+    },
+    {
+      "line": 609,
+      "code": "ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min)"
+      ]
+    },
+    {
+      "line": 610,
+      "code": "ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));",
+      "type": "boolean",
+      "operands": [
+        "QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max)"
+      ]
+    },
+    {
+      "line": 611,
+      "code": "ASSERT_EQ(Min, StartPacket);",
+      "type": "equality",
+      "operands": [
+        "Min",
+        "StartPacket"
+      ]
+    },
+    {
+      "line": 612,
+      "code": "ASSERT_EQ(Max, StartPacket + Count - 1);",
+      "type": "equality",
+      "operands": [
+        "Max",
+        "StartPacket + Count - 1"
+      ]
+    },
+    {
+      "line": 630,
+      "code": "ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, i));",
+      "type": "boolean",
+      "operands": [
+        "QuicAckTrackerAddPacketNumber(&Tracker, i)"
+      ]
+    },
+    {
+      "line": 636,
+      "code": "ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 5u);",
+      "type": "equality",
+      "operands": [
+        "QuicRangeSize(&Tracker.PacketNumbersReceived)",
+        "5u"
+      ]
+    }
+  ],
+  "raw_lines": [
+    {
+      "number": 1,
+      "content": "/*++"
+    },
+    {
+      "number": 2,
+      "content": ""
+    },
+    {
+      "number": 3,
+      "content": "    Copyright (c) Microsoft Corporation."
+    },
+    {
+      "number": 4,
+      "content": "    Licensed under the MIT License."
+    },
+    {
+      "number": 5,
+      "content": ""
+    },
+    {
+      "number": 6,
+      "content": "Abstract:"
+    },
+    {
+      "number": 7,
+      "content": ""
+    },
+    {
+      "number": 8,
+      "content": "    Unit tests for the QUIC_ACK_TRACKER component."
+    },
+    {
+      "number": 9,
+      "content": "    Tests cover initialization, reset, packet number tracking, and duplicate detection."
+    },
+    {
+      "number": 10,
+      "content": "    The AckTracker manages received packet numbers for duplicate detection and"
+    },
+    {
+      "number": 11,
+      "content": "    tracks packet numbers that need to be acknowledged via ACK frames."
+    },
+    {
+      "number": 12,
+      "content": ""
+    },
+    {
+      "number": 13,
+      "content": "--*/"
+    },
+    {
+      "number": 14,
+      "content": ""
+    },
+    {
+      "number": 15,
+      "content": "#include \"main.h\""
+    },
+    {
+      "number": 16,
+      "content": "#ifdef QUIC_CLOG"
+    },
+    {
+      "number": 17,
+      "content": "#include \"AckTrackerTest.cpp.clog.h\""
+    },
+    {
+      "number": 18,
+      "content": "#endif"
+    },
+    {
+      "number": 19,
+      "content": ""
+    },
+    {
+      "number": 20,
+      "content": "//"
+    },
+    {
+      "number": 21,
+      "content": "// Test 1: Basic initialization and uninitialization"
+    },
+    {
+      "number": 22,
+      "content": "// Scenario: Verifies QuicAckTrackerInitialize correctly sets up the tracker's"
+    },
+    {
+      "number": 23,
+      "content": "// internal QUIC_RANGE structures for PacketNumbersReceived and PacketNumbersToAck."
+    },
+    {
+      "number": 24,
+      "content": "// Tests the basic lifecycle of creating and destroying an AckTracker."
+    },
+    {
+      "number": 25,
+      "content": "//"
+    },
+    {
+      "number": 26,
+      "content": "TEST(AckTrackerTest, InitializeAndUninitialize)"
+    },
+    {
+      "number": 27,
+      "content": "{"
+    },
+    {
+      "number": 28,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 29,
+      "content": ""
+    },
+    {
+      "number": 30,
+      "content": "    //"
+    },
+    {
+      "number": 31,
+      "content": "    // Initialize the tracker - this should set up both internal ranges"
+    },
+    {
+      "number": 32,
+      "content": "    //"
+    },
+    {
+      "number": 33,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 34,
+      "content": ""
+    },
+    {
+      "number": 35,
+      "content": "    //"
+    },
+    {
+      "number": 36,
+      "content": "    // Verify the ranges are properly initialized (size should be 0)"
+    },
+    {
+      "number": 37,
+      "content": "    //"
+    },
+    {
+      "number": 38,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);"
+    },
+    {
+      "number": 39,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);"
+    },
+    {
+      "number": 40,
+      "content": ""
+    },
+    {
+      "number": 41,
+      "content": "    //"
+    },
+    {
+      "number": 42,
+      "content": "    // Clean up"
+    },
+    {
+      "number": 43,
+      "content": "    //"
+    },
+    {
+      "number": 44,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 45,
+      "content": "}"
+    },
+    {
+      "number": 46,
+      "content": ""
+    },
+    {
+      "number": 47,
+      "content": "//"
+    },
+    {
+      "number": 48,
+      "content": "// Test 2: Reset functionality"
+    },
+    {
+      "number": 49,
+      "content": "// Scenario: Verifies QuicAckTrackerReset correctly clears all state fields"
+    },
+    {
+      "number": 50,
+      "content": "// including AckElicitingPacketsToAcknowledge, LargestPacketNumberAcknowledged,"
+    },
+    {
+      "number": 51,
+      "content": "// LargestPacketNumberRecvTime, flags, ECN counters, and both packet ranges."
+    },
+    {
+      "number": 52,
+      "content": "//"
+    },
+    {
+      "number": 53,
+      "content": "TEST(AckTrackerTest, Reset)"
+    },
+    {
+      "number": 54,
+      "content": "{"
+    },
+    {
+      "number": 55,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 56,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 57,
+      "content": ""
+    },
+    {
+      "number": 58,
+      "content": "    //"
+    },
+    {
+      "number": 59,
+      "content": "    // Set some initial state that should be cleared by reset"
+    },
+    {
+      "number": 60,
+      "content": "    //"
+    },
+    {
+      "number": 61,
+      "content": "    Tracker.AckElicitingPacketsToAcknowledge = 5;"
+    },
+    {
+      "number": 62,
+      "content": "    Tracker.LargestPacketNumberAcknowledged = 100;"
+    },
+    {
+      "number": 63,
+      "content": "    Tracker.LargestPacketNumberRecvTime = 12345;"
+    },
+    {
+      "number": 64,
+      "content": "    Tracker.AlreadyWrittenAckFrame = TRUE;"
+    },
+    {
+      "number": 65,
+      "content": "    Tracker.NonZeroRecvECN = TRUE;"
+    },
+    {
+      "number": 66,
+      "content": "    Tracker.ReceivedECN.ECT_0_Count = 10;"
+    },
+    {
+      "number": 67,
+      "content": "    Tracker.ReceivedECN.ECT_1_Count = 20;"
+    },
+    {
+      "number": 68,
+      "content": "    Tracker.ReceivedECN.CE_Count = 5;"
+    },
+    {
+      "number": 69,
+      "content": ""
+    },
+    {
+      "number": 70,
+      "content": "    //"
+    },
+    {
+      "number": 71,
+      "content": "    // Add some packet numbers to the ranges"
+    },
+    {
+      "number": 72,
+      "content": "    //"
+    },
+    {
+      "number": 73,
+      "content": "    QuicRangeAddValue(&Tracker.PacketNumbersReceived, 1);"
+    },
+    {
+      "number": 74,
+      "content": "    QuicRangeAddValue(&Tracker.PacketNumbersReceived, 2);"
+    },
+    {
+      "number": 75,
+      "content": "    QuicRangeAddValue(&Tracker.PacketNumbersToAck, 1);"
+    },
+    {
+      "number": 76,
+      "content": "    QuicRangeAddValue(&Tracker.PacketNumbersToAck, 2);"
+    },
+    {
+      "number": 77,
+      "content": ""
+    },
+    {
+      "number": 78,
+      "content": "    ASSERT_GT(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);"
+    },
+    {
+      "number": 79,
+      "content": "    ASSERT_GT(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);"
+    },
+    {
+      "number": 80,
+      "content": ""
+    },
+    {
+      "number": 81,
+      "content": "    //"
+    },
+    {
+      "number": 82,
+      "content": "    // Reset the tracker"
+    },
+    {
+      "number": 83,
+      "content": "    //"
+    },
+    {
+      "number": 84,
+      "content": "    QuicAckTrackerReset(&Tracker);"
+    },
+    {
+      "number": 85,
+      "content": ""
+    },
+    {
+      "number": 86,
+      "content": "    //"
+    },
+    {
+      "number": 87,
+      "content": "    // Verify all fields are reset"
+    },
+    {
+      "number": 88,
+      "content": "    //"
+    },
+    {
+      "number": 89,
+      "content": "    ASSERT_EQ(Tracker.AckElicitingPacketsToAcknowledge, 0u);"
+    },
+    {
+      "number": 90,
+      "content": "    ASSERT_EQ(Tracker.LargestPacketNumberAcknowledged, 0u);"
+    },
+    {
+      "number": 91,
+      "content": "    ASSERT_EQ(Tracker.LargestPacketNumberRecvTime, 0u);"
+    },
+    {
+      "number": 92,
+      "content": "    ASSERT_FALSE(Tracker.AlreadyWrittenAckFrame);"
+    },
+    {
+      "number": 93,
+      "content": "    ASSERT_FALSE(Tracker.NonZeroRecvECN);"
+    },
+    {
+      "number": 94,
+      "content": "    ASSERT_EQ(Tracker.ReceivedECN.ECT_0_Count, 0u);"
+    },
+    {
+      "number": 95,
+      "content": "    ASSERT_EQ(Tracker.ReceivedECN.ECT_1_Count, 0u);"
+    },
+    {
+      "number": 96,
+      "content": "    ASSERT_EQ(Tracker.ReceivedECN.CE_Count, 0u);"
+    },
+    {
+      "number": 97,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);"
+    },
+    {
+      "number": 98,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);"
+    },
+    {
+      "number": 99,
+      "content": ""
+    },
+    {
+      "number": 100,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 101,
+      "content": "}"
+    },
+    {
+      "number": 102,
+      "content": ""
+    },
+    {
+      "number": 103,
+      "content": "//"
+    },
+    {
+      "number": 104,
+      "content": "// Test 3: Add first packet number (not a duplicate)"
+    },
+    {
+      "number": 105,
+      "content": "// Scenario: When adding the first packet number to an empty tracker,"
+    },
+    {
+      "number": 106,
+      "content": "// QuicAckTrackerAddPacketNumber should return FALSE (not a duplicate)"
+    },
+    {
+      "number": 107,
+      "content": "// and the packet should be added to PacketNumbersReceived."
+    },
+    {
+      "number": 108,
+      "content": "//"
+    },
+    {
+      "number": 109,
+      "content": "TEST(AckTrackerTest, AddFirstPacketNumber)"
+    },
+    {
+      "number": 110,
+      "content": "{"
+    },
+    {
+      "number": 111,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 112,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 113,
+      "content": ""
+    },
+    {
+      "number": 114,
+      "content": "    //"
+    },
+    {
+      "number": 115,
+      "content": "    // First packet should not be a duplicate"
+    },
+    {
+      "number": 116,
+      "content": "    //"
+    },
+    {
+      "number": 117,
+      "content": "    BOOLEAN IsDuplicate = QuicAckTrackerAddPacketNumber(&Tracker, 100);"
+    },
+    {
+      "number": 118,
+      "content": "    ASSERT_FALSE(IsDuplicate);"
+    },
+    {
+      "number": 119,
+      "content": ""
+    },
+    {
+      "number": 120,
+      "content": "    //"
+    },
+    {
+      "number": 121,
+      "content": "    // Verify the packet was added to the received range"
+    },
+    {
+      "number": 122,
+      "content": "    //"
+    },
+    {
+      "number": 123,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 124,
+      "content": ""
+    },
+    {
+      "number": 125,
+      "content": "    uint64_t Min, Max;"
+    },
+    {
+      "number": 126,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 127,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 128,
+      "content": "    ASSERT_EQ(Min, 100u);"
+    },
+    {
+      "number": 129,
+      "content": "    ASSERT_EQ(Max, 100u);"
+    },
+    {
+      "number": 130,
+      "content": ""
+    },
+    {
+      "number": 131,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 132,
+      "content": "}"
+    },
+    {
+      "number": 133,
+      "content": ""
+    },
+    {
+      "number": 134,
+      "content": "//"
+    },
+    {
+      "number": 135,
+      "content": "// Test 4: Detect duplicate packet number"
+    },
+    {
+      "number": 136,
+      "content": "// Scenario: When the same packet number is added twice, the second call to"
+    },
+    {
+      "number": 137,
+      "content": "// QuicAckTrackerAddPacketNumber should return TRUE indicating a duplicate."
+    },
+    {
+      "number": 138,
+      "content": "//"
+    },
+    {
+      "number": 139,
+      "content": "TEST(AckTrackerTest, DetectDuplicatePacketNumber)"
+    },
+    {
+      "number": 140,
+      "content": "{"
+    },
+    {
+      "number": 141,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 142,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 143,
+      "content": ""
+    },
+    {
+      "number": 144,
+      "content": "    //"
+    },
+    {
+      "number": 145,
+      "content": "    // Add packet 100 first time - not a duplicate"
+    },
+    {
+      "number": 146,
+      "content": "    //"
+    },
+    {
+      "number": 147,
+      "content": "    BOOLEAN FirstAdd = QuicAckTrackerAddPacketNumber(&Tracker, 100);"
+    },
+    {
+      "number": 148,
+      "content": "    ASSERT_FALSE(FirstAdd);"
+    },
+    {
+      "number": 149,
+      "content": ""
+    },
+    {
+      "number": 150,
+      "content": "    //"
+    },
+    {
+      "number": 151,
+      "content": "    // Add packet 100 again - should be detected as duplicate"
+    },
+    {
+      "number": 152,
+      "content": "    //"
+    },
+    {
+      "number": 153,
+      "content": "    BOOLEAN SecondAdd = QuicAckTrackerAddPacketNumber(&Tracker, 100);"
+    },
+    {
+      "number": 154,
+      "content": "    ASSERT_TRUE(SecondAdd);"
+    },
+    {
+      "number": 155,
+      "content": ""
+    },
+    {
+      "number": 156,
+      "content": "    //"
+    },
+    {
+      "number": 157,
+      "content": "    // Range should still only have one entry (no duplicate added)"
+    },
+    {
+      "number": 158,
+      "content": "    //"
+    },
+    {
+      "number": 159,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 160,
+      "content": ""
+    },
+    {
+      "number": 161,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 162,
+      "content": "}"
+    },
+    {
+      "number": 163,
+      "content": ""
+    },
+    {
+      "number": 164,
+      "content": "//"
+    },
+    {
+      "number": 165,
+      "content": "// Test 5: Add multiple sequential packet numbers"
+    },
+    {
+      "number": 166,
+      "content": "// Scenario: Adding sequential packet numbers should result in a single"
+    },
+    {
+      "number": 167,
+      "content": "// contiguous range in PacketNumbersReceived. None should be duplicates."
+    },
+    {
+      "number": 168,
+      "content": "//"
+    },
+    {
+      "number": 169,
+      "content": "TEST(AckTrackerTest, AddSequentialPacketNumbers)"
+    },
+    {
+      "number": 170,
+      "content": "{"
+    },
+    {
+      "number": 171,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 172,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 173,
+      "content": ""
+    },
+    {
+      "number": 174,
+      "content": "    //"
+    },
+    {
+      "number": 175,
+      "content": "    // Add packets 100, 101, 102 in order"
+    },
+    {
+      "number": 176,
+      "content": "    //"
+    },
+    {
+      "number": 177,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 178,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));"
+    },
+    {
+      "number": 179,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));"
+    },
+    {
+      "number": 180,
+      "content": ""
+    },
+    {
+      "number": 181,
+      "content": "    //"
+    },
+    {
+      "number": 182,
+      "content": "    // Should be merged into a single range"
+    },
+    {
+      "number": 183,
+      "content": "    //"
+    },
+    {
+      "number": 184,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 185,
+      "content": ""
+    },
+    {
+      "number": 186,
+      "content": "    uint64_t Min, Max;"
+    },
+    {
+      "number": 187,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 188,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 189,
+      "content": "    ASSERT_EQ(Min, 100u);"
+    },
+    {
+      "number": 190,
+      "content": "    ASSERT_EQ(Max, 102u);"
+    },
+    {
+      "number": 191,
+      "content": ""
+    },
+    {
+      "number": 192,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 193,
+      "content": "}"
+    },
+    {
+      "number": 194,
+      "content": ""
+    },
+    {
+      "number": 195,
+      "content": "//"
+    },
+    {
+      "number": 196,
+      "content": "// Test 6: Add packet numbers with gaps"
+    },
+    {
+      "number": 197,
+      "content": "// Scenario: Adding non-sequential packet numbers should create multiple"
+    },
+    {
+      "number": 198,
+      "content": "// ranges in PacketNumbersReceived. Each unique packet is not a duplicate."
+    },
+    {
+      "number": 199,
+      "content": "//"
+    },
+    {
+      "number": 200,
+      "content": "TEST(AckTrackerTest, AddPacketNumbersWithGaps)"
+    },
+    {
+      "number": 201,
+      "content": "{"
+    },
+    {
+      "number": 202,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 203,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 204,
+      "content": ""
+    },
+    {
+      "number": 205,
+      "content": "    //"
+    },
+    {
+      "number": 206,
+      "content": "    // Add packets 100, 102, 104 (with gaps at 101 and 103)"
+    },
+    {
+      "number": 207,
+      "content": "    //"
+    },
+    {
+      "number": 208,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 209,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));"
+    },
+    {
+      "number": 210,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 104));"
+    },
+    {
+      "number": 211,
+      "content": ""
+    },
+    {
+      "number": 212,
+      "content": "    //"
+    },
+    {
+      "number": 213,
+      "content": "    // Should have three separate ranges due to gaps"
+    },
+    {
+      "number": 214,
+      "content": "    //"
+    },
+    {
+      "number": 215,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 3u);"
+    },
+    {
+      "number": 216,
+      "content": ""
+    },
+    {
+      "number": 217,
+      "content": "    uint64_t Min, Max;"
+    },
+    {
+      "number": 218,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 219,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 220,
+      "content": "    ASSERT_EQ(Min, 100u);"
+    },
+    {
+      "number": 221,
+      "content": "    ASSERT_EQ(Max, 104u);"
+    },
+    {
+      "number": 222,
+      "content": ""
+    },
+    {
+      "number": 223,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 224,
+      "content": "}"
+    },
+    {
+      "number": 225,
+      "content": ""
+    },
+    {
+      "number": 226,
+      "content": "//"
+    },
+    {
+      "number": 227,
+      "content": "// Test 7: Fill gaps merges ranges"
+    },
+    {
+      "number": 228,
+      "content": "// Scenario: Adding the missing packet numbers between existing ranges"
+    },
+    {
+      "number": 229,
+      "content": "// should merge them into a single contiguous range."
+    },
+    {
+      "number": 230,
+      "content": "//"
+    },
+    {
+      "number": 231,
+      "content": "TEST(AckTrackerTest, FillGapsMergesRanges)"
+    },
+    {
+      "number": 232,
+      "content": "{"
+    },
+    {
+      "number": 233,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 234,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 235,
+      "content": ""
+    },
+    {
+      "number": 236,
+      "content": "    //"
+    },
+    {
+      "number": 237,
+      "content": "    // Add packets 100, 102 (gap at 101)"
+    },
+    {
+      "number": 238,
+      "content": "    //"
+    },
+    {
+      "number": 239,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 240,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));"
+    },
+    {
+      "number": 241,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 2u);"
+    },
+    {
+      "number": 242,
+      "content": ""
+    },
+    {
+      "number": 243,
+      "content": "    //"
+    },
+    {
+      "number": 244,
+      "content": "    // Fill the gap with packet 101"
+    },
+    {
+      "number": 245,
+      "content": "    //"
+    },
+    {
+      "number": 246,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));"
+    },
+    {
+      "number": 247,
+      "content": ""
+    },
+    {
+      "number": 248,
+      "content": "    //"
+    },
+    {
+      "number": 249,
+      "content": "    // Should now be merged into a single range"
+    },
+    {
+      "number": 250,
+      "content": "    //"
+    },
+    {
+      "number": 251,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 252,
+      "content": ""
+    },
+    {
+      "number": 253,
+      "content": "    uint64_t Min, Max;"
+    },
+    {
+      "number": 254,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 255,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 256,
+      "content": "    ASSERT_EQ(Min, 100u);"
+    },
+    {
+      "number": 257,
+      "content": "    ASSERT_EQ(Max, 102u);"
+    },
+    {
+      "number": 258,
+      "content": ""
+    },
+    {
+      "number": 259,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 260,
+      "content": "}"
+    },
+    {
+      "number": 261,
+      "content": ""
+    },
+    {
+      "number": 262,
+      "content": "//"
+    },
+    {
+      "number": 263,
+      "content": "// Test 8: Add packets in reverse order"
+    },
+    {
+      "number": 264,
+      "content": "// Scenario: Adding packet numbers in reverse order should still correctly"
+    },
+    {
+      "number": 265,
+      "content": "// track all packets and merge adjacent ranges."
+    },
+    {
+      "number": 266,
+      "content": "//"
+    },
+    {
+      "number": 267,
+      "content": "TEST(AckTrackerTest, AddPacketsReverseOrder)"
+    },
+    {
+      "number": 268,
+      "content": "{"
+    },
+    {
+      "number": 269,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 270,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 271,
+      "content": ""
+    },
+    {
+      "number": 272,
+      "content": "    //"
+    },
+    {
+      "number": 273,
+      "content": "    // Add packets 102, 101, 100 in reverse order"
+    },
+    {
+      "number": 274,
+      "content": "    //"
+    },
+    {
+      "number": 275,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 102));"
+    },
+    {
+      "number": 276,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 101));"
+    },
+    {
+      "number": 277,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 278,
+      "content": ""
+    },
+    {
+      "number": 279,
+      "content": "    //"
+    },
+    {
+      "number": 280,
+      "content": "    // Should be merged into a single range"
+    },
+    {
+      "number": 281,
+      "content": "    //"
+    },
+    {
+      "number": 282,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 283,
+      "content": ""
+    },
+    {
+      "number": 284,
+      "content": "    uint64_t Min, Max;"
+    },
+    {
+      "number": 285,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 286,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 287,
+      "content": "    ASSERT_EQ(Min, 100u);"
+    },
+    {
+      "number": 288,
+      "content": "    ASSERT_EQ(Max, 102u);"
+    },
+    {
+      "number": 289,
+      "content": ""
+    },
+    {
+      "number": 290,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 291,
+      "content": "}"
+    },
+    {
+      "number": 292,
+      "content": ""
+    },
+    {
+      "number": 293,
+      "content": "//"
+    },
+    {
+      "number": 294,
+      "content": "// Test 9: QuicAckTrackerHasPacketsToAck when empty"
+    },
+    {
+      "number": 295,
+      "content": "// Scenario: An empty tracker should report no packets to acknowledge"
+    },
+    {
+      "number": 296,
+      "content": "// when PacketNumbersToAck is empty."
+    },
+    {
+      "number": 297,
+      "content": "//"
+    },
+    {
+      "number": 298,
+      "content": "TEST(AckTrackerTest, HasPacketsToAckWhenEmpty)"
+    },
+    {
+      "number": 299,
+      "content": "{"
+    },
+    {
+      "number": 300,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 301,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 302,
+      "content": ""
+    },
+    {
+      "number": 303,
+      "content": "    //"
+    },
+    {
+      "number": 304,
+      "content": "    // Empty tracker should have no packets to ack"
+    },
+    {
+      "number": 305,
+      "content": "    //"
+    },
+    {
+      "number": 306,
+      "content": "    ASSERT_FALSE(QuicAckTrackerHasPacketsToAck(&Tracker));"
+    },
+    {
+      "number": 307,
+      "content": ""
+    },
+    {
+      "number": 308,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 309,
+      "content": "}"
+    },
+    {
+      "number": 310,
+      "content": ""
+    },
+    {
+      "number": 311,
+      "content": "//"
+    },
+    {
+      "number": 312,
+      "content": "// Test 10: QuicAckTrackerHasPacketsToAck with packets"
+    },
+    {
+      "number": 313,
+      "content": "// Scenario: When packets are added to PacketNumbersToAck and"
+    },
+    {
+      "number": 314,
+      "content": "// AlreadyWrittenAckFrame is FALSE, HasPacketsToAck should return TRUE."
+    },
+    {
+      "number": 315,
+      "content": "//"
+    },
+    {
+      "number": 316,
+      "content": "TEST(AckTrackerTest, HasPacketsToAckWithPackets)"
+    },
+    {
+      "number": 317,
+      "content": "{"
+    },
+    {
+      "number": 318,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 319,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 320,
+      "content": ""
+    },
+    {
+      "number": 321,
+      "content": "    //"
+    },
+    {
+      "number": 322,
+      "content": "    // Add a packet to the ToAck range"
+    },
+    {
+      "number": 323,
+      "content": "    //"
+    },
+    {
+      "number": 324,
+      "content": "    QuicRangeAddValue(&Tracker.PacketNumbersToAck, 100);"
+    },
+    {
+      "number": 325,
+      "content": "    Tracker.AlreadyWrittenAckFrame = FALSE;"
+    },
+    {
+      "number": 326,
+      "content": ""
+    },
+    {
+      "number": 327,
+      "content": "    //"
+    },
+    {
+      "number": 328,
+      "content": "    // Should indicate packets to ack"
+    },
+    {
+      "number": 329,
+      "content": "    //"
+    },
+    {
+      "number": 330,
+      "content": "    ASSERT_TRUE(QuicAckTrackerHasPacketsToAck(&Tracker));"
+    },
+    {
+      "number": 331,
+      "content": ""
+    },
+    {
+      "number": 332,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 333,
+      "content": "}"
+    },
+    {
+      "number": 334,
+      "content": ""
+    },
+    {
+      "number": 335,
+      "content": "//"
+    },
+    {
+      "number": 336,
+      "content": "// Test 11: QuicAckTrackerHasPacketsToAck after writing ACK frame"
+    },
+    {
+      "number": 337,
+      "content": "// Scenario: When AlreadyWrittenAckFrame is TRUE, HasPacketsToAck should"
+    },
+    {
+      "number": 338,
+      "content": "// return FALSE even if there are packets in PacketNumbersToAck."
+    },
+    {
+      "number": 339,
+      "content": "//"
+    },
+    {
+      "number": 340,
+      "content": "TEST(AckTrackerTest, HasPacketsToAckAfterWritingFrame)"
+    },
+    {
+      "number": 341,
+      "content": "{"
+    },
+    {
+      "number": 342,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 343,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 344,
+      "content": ""
+    },
+    {
+      "number": 345,
+      "content": "    //"
+    },
+    {
+      "number": 346,
+      "content": "    // Add a packet and mark ACK frame as written"
+    },
+    {
+      "number": 347,
+      "content": "    //"
+    },
+    {
+      "number": 348,
+      "content": "    QuicRangeAddValue(&Tracker.PacketNumbersToAck, 100);"
+    },
+    {
+      "number": 349,
+      "content": "    Tracker.AlreadyWrittenAckFrame = TRUE;"
+    },
+    {
+      "number": 350,
+      "content": ""
+    },
+    {
+      "number": 351,
+      "content": "    //"
+    },
+    {
+      "number": 352,
+      "content": "    // Should not indicate packets to ack (already written)"
+    },
+    {
+      "number": 353,
+      "content": "    //"
+    },
+    {
+      "number": 354,
+      "content": "    ASSERT_FALSE(QuicAckTrackerHasPacketsToAck(&Tracker));"
+    },
+    {
+      "number": 355,
+      "content": ""
+    },
+    {
+      "number": 356,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 357,
+      "content": "}"
+    },
+    {
+      "number": 358,
+      "content": ""
+    },
+    {
+      "number": 359,
+      "content": "//"
+    },
+    {
+      "number": 360,
+      "content": "// Test 12: Packet number zero handling"
+    },
+    {
+      "number": 361,
+      "content": "// Scenario: Packet number 0 is a valid packet number and should be"
+    },
+    {
+      "number": 362,
+      "content": "// tracked correctly without being treated specially."
+    },
+    {
+      "number": 363,
+      "content": "//"
+    },
+    {
+      "number": 364,
+      "content": "TEST(AckTrackerTest, PacketNumberZero)"
+    },
+    {
+      "number": 365,
+      "content": "{"
+    },
+    {
+      "number": 366,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 367,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 368,
+      "content": ""
+    },
+    {
+      "number": 369,
+      "content": "    //"
+    },
+    {
+      "number": 370,
+      "content": "    // Packet 0 should not be a duplicate on first add"
+    },
+    {
+      "number": 371,
+      "content": "    //"
+    },
+    {
+      "number": 372,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 0));"
+    },
+    {
+      "number": 373,
+      "content": ""
+    },
+    {
+      "number": 374,
+      "content": "    //"
+    },
+    {
+      "number": 375,
+      "content": "    // Verify it was added"
+    },
+    {
+      "number": 376,
+      "content": "    //"
+    },
+    {
+      "number": 377,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 378,
+      "content": ""
+    },
+    {
+      "number": 379,
+      "content": "    uint64_t Min;"
+    },
+    {
+      "number": 380,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 381,
+      "content": "    ASSERT_EQ(Min, 0u);"
+    },
+    {
+      "number": 382,
+      "content": ""
+    },
+    {
+      "number": 383,
+      "content": "    //"
+    },
+    {
+      "number": 384,
+      "content": "    // Adding again should be a duplicate"
+    },
+    {
+      "number": 385,
+      "content": "    //"
+    },
+    {
+      "number": 386,
+      "content": "    ASSERT_TRUE(QuicAckTrackerAddPacketNumber(&Tracker, 0));"
+    },
+    {
+      "number": 387,
+      "content": ""
+    },
+    {
+      "number": 388,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 389,
+      "content": "}"
+    },
+    {
+      "number": 390,
+      "content": ""
+    },
+    {
+      "number": 391,
+      "content": "//"
+    },
+    {
+      "number": 392,
+      "content": "// Test 13: Large packet number handling"
+    },
+    {
+      "number": 393,
+      "content": "// Scenario: Large packet numbers near the maximum should be handled"
+    },
+    {
+      "number": 394,
+      "content": "// correctly without overflow issues."
+    },
+    {
+      "number": 395,
+      "content": "//"
+    },
+    {
+      "number": 396,
+      "content": "TEST(AckTrackerTest, LargePacketNumbers)"
+    },
+    {
+      "number": 397,
+      "content": "{"
+    },
+    {
+      "number": 398,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 399,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 400,
+      "content": ""
+    },
+    {
+      "number": 401,
+      "content": "    //"
+    },
+    {
+      "number": 402,
+      "content": "    // Use a large packet number (close to max varint value)"
+    },
+    {
+      "number": 403,
+      "content": "    //"
+    },
+    {
+      "number": 404,
+      "content": "    const uint64_t LargePacketNumber = QUIC_VAR_INT_MAX - 10;"
+    },
+    {
+      "number": 405,
+      "content": ""
+    },
+    {
+      "number": 406,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber));"
+    },
+    {
+      "number": 407,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, LargePacketNumber + 1));"
+    },
+    {
+      "number": 408,
+      "content": ""
+    },
+    {
+      "number": 409,
+      "content": "    //"
+    },
+    {
+      "number": 410,
+      "content": "    // Verify they were added correctly"
+    },
+    {
+      "number": 411,
+      "content": "    //"
+    },
+    {
+      "number": 412,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 413,
+      "content": ""
+    },
+    {
+      "number": 414,
+      "content": "    uint64_t Max;"
+    },
+    {
+      "number": 415,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 416,
+      "content": "    ASSERT_EQ(Max, LargePacketNumber + 1);"
+    },
+    {
+      "number": 417,
+      "content": ""
+    },
+    {
+      "number": 418,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 419,
+      "content": "}"
+    },
+    {
+      "number": 420,
+      "content": ""
+    },
+    {
+      "number": 421,
+      "content": "//"
+    },
+    {
+      "number": 422,
+      "content": "// Test 14: Multiple reset cycles"
+    },
+    {
+      "number": 423,
+      "content": "// Scenario: The tracker should work correctly across multiple reset cycles,"
+    },
+    {
+      "number": 424,
+      "content": "// maintaining proper state management."
+    },
+    {
+      "number": 425,
+      "content": "//"
+    },
+    {
+      "number": 426,
+      "content": "TEST(AckTrackerTest, MultipleResetCycles)"
+    },
+    {
+      "number": 427,
+      "content": "{"
+    },
+    {
+      "number": 428,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 429,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 430,
+      "content": ""
+    },
+    {
+      "number": 431,
+      "content": "    for (int cycle = 0; cycle < 3; cycle++) {"
+    },
+    {
+      "number": 432,
+      "content": "        //"
+    },
+    {
+      "number": 433,
+      "content": "        // Add some packets"
+    },
+    {
+      "number": 434,
+      "content": "        //"
+    },
+    {
+      "number": 435,
+      "content": "        uint64_t BasePacket = (uint64_t)cycle * 100;"
+    },
+    {
+      "number": 436,
+      "content": "        ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, BasePacket));"
+    },
+    {
+      "number": 437,
+      "content": "        ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, BasePacket + 1));"
+    },
+    {
+      "number": 438,
+      "content": ""
+    },
+    {
+      "number": 439,
+      "content": "        //"
+    },
+    {
+      "number": 440,
+      "content": "        // Verify state"
+    },
+    {
+      "number": 441,
+      "content": "        //"
+    },
+    {
+      "number": 442,
+      "content": "        ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 443,
+      "content": ""
+    },
+    {
+      "number": 444,
+      "content": "        //"
+    },
+    {
+      "number": 445,
+      "content": "        // Reset and verify clean state"
+    },
+    {
+      "number": 446,
+      "content": "        //"
+    },
+    {
+      "number": 447,
+      "content": "        QuicAckTrackerReset(&Tracker);"
+    },
+    {
+      "number": 448,
+      "content": "        ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 0u);"
+    },
+    {
+      "number": 449,
+      "content": "        ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersToAck), 0u);"
+    },
+    {
+      "number": 450,
+      "content": "    }"
+    },
+    {
+      "number": 451,
+      "content": ""
+    },
+    {
+      "number": 452,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 453,
+      "content": "}"
+    },
+    {
+      "number": 454,
+      "content": ""
+    },
+    {
+      "number": 455,
+      "content": "//"
+    },
+    {
+      "number": 456,
+      "content": "// Test 15: ECN state reset verification"
+    },
+    {
+      "number": 457,
+      "content": "// Scenario: Verifies that ECN-related state is properly cleared on reset,"
+    },
+    {
+      "number": 458,
+      "content": "// including all three ECN counter types."
+    },
+    {
+      "number": 459,
+      "content": "//"
+    },
+    {
+      "number": 460,
+      "content": "TEST(AckTrackerTest, EcnStateReset)"
+    },
+    {
+      "number": 461,
+      "content": "{"
+    },
+    {
+      "number": 462,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 463,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 464,
+      "content": ""
+    },
+    {
+      "number": 465,
+      "content": "    //"
+    },
+    {
+      "number": 466,
+      "content": "    // Set various ECN state"
+    },
+    {
+      "number": 467,
+      "content": "    //"
+    },
+    {
+      "number": 468,
+      "content": "    Tracker.NonZeroRecvECN = TRUE;"
+    },
+    {
+      "number": 469,
+      "content": "    Tracker.ReceivedECN.ECT_0_Count = 100;"
+    },
+    {
+      "number": 470,
+      "content": "    Tracker.ReceivedECN.ECT_1_Count = 200;"
+    },
+    {
+      "number": 471,
+      "content": "    Tracker.ReceivedECN.CE_Count = 50;"
+    },
+    {
+      "number": 472,
+      "content": ""
+    },
+    {
+      "number": 473,
+      "content": "    //"
+    },
+    {
+      "number": 474,
+      "content": "    // Reset"
+    },
+    {
+      "number": 475,
+      "content": "    //"
+    },
+    {
+      "number": 476,
+      "content": "    QuicAckTrackerReset(&Tracker);"
+    },
+    {
+      "number": 477,
+      "content": ""
+    },
+    {
+      "number": 478,
+      "content": "    //"
+    },
+    {
+      "number": 479,
+      "content": "    // Verify all ECN state is cleared"
+    },
+    {
+      "number": 480,
+      "content": "    //"
+    },
+    {
+      "number": 481,
+      "content": "    ASSERT_FALSE(Tracker.NonZeroRecvECN);"
+    },
+    {
+      "number": 482,
+      "content": "    ASSERT_EQ(Tracker.ReceivedECN.ECT_0_Count, 0u);"
+    },
+    {
+      "number": 483,
+      "content": "    ASSERT_EQ(Tracker.ReceivedECN.ECT_1_Count, 0u);"
+    },
+    {
+      "number": 484,
+      "content": "    ASSERT_EQ(Tracker.ReceivedECN.CE_Count, 0u);"
+    },
+    {
+      "number": 485,
+      "content": ""
+    },
+    {
+      "number": 486,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 487,
+      "content": "}"
+    },
+    {
+      "number": 488,
+      "content": ""
+    },
+    {
+      "number": 489,
+      "content": "//"
+    },
+    {
+      "number": 490,
+      "content": "// Test 16: Duplicate detection across resets"
+    },
+    {
+      "number": 491,
+      "content": "// Scenario: After a reset, the same packet number should not be detected"
+    },
+    {
+      "number": 492,
+      "content": "// as a duplicate since the tracking state is cleared."
+    },
+    {
+      "number": 493,
+      "content": "//"
+    },
+    {
+      "number": 494,
+      "content": "TEST(AckTrackerTest, DuplicateDetectionAcrossReset)"
+    },
+    {
+      "number": 495,
+      "content": "{"
+    },
+    {
+      "number": 496,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 497,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 498,
+      "content": ""
+    },
+    {
+      "number": 499,
+      "content": "    //"
+    },
+    {
+      "number": 500,
+      "content": "    // Add packet 100"
+    },
+    {
+      "number": 501,
+      "content": "    //"
+    },
+    {
+      "number": 502,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 503,
+      "content": ""
+    },
+    {
+      "number": 504,
+      "content": "    //"
+    },
+    {
+      "number": 505,
+      "content": "    // Verify duplicate detection works"
+    },
+    {
+      "number": 506,
+      "content": "    //"
+    },
+    {
+      "number": 507,
+      "content": "    ASSERT_TRUE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 508,
+      "content": ""
+    },
+    {
+      "number": 509,
+      "content": "    //"
+    },
+    {
+      "number": 510,
+      "content": "    // Reset the tracker"
+    },
+    {
+      "number": 511,
+      "content": "    //"
+    },
+    {
+      "number": 512,
+      "content": "    QuicAckTrackerReset(&Tracker);"
+    },
+    {
+      "number": 513,
+      "content": ""
+    },
+    {
+      "number": 514,
+      "content": "    //"
+    },
+    {
+      "number": 515,
+      "content": "    // After reset, the same packet should not be a duplicate"
+    },
+    {
+      "number": 516,
+      "content": "    //"
+    },
+    {
+      "number": 517,
+      "content": "    ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, 100));"
+    },
+    {
+      "number": 518,
+      "content": ""
+    },
+    {
+      "number": 519,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 520,
+      "content": "}"
+    },
+    {
+      "number": 521,
+      "content": ""
+    },
+    {
+      "number": 522,
+      "content": "//"
+    },
+    {
+      "number": 523,
+      "content": "// Test 17: Timing field reset verification"
+    },
+    {
+      "number": 524,
+      "content": "// Scenario: Verifies that timing-related fields like LargestPacketNumberRecvTime"
+    },
+    {
+      "number": 525,
+      "content": "// are properly reset to zero."
+    },
+    {
+      "number": 526,
+      "content": "//"
+    },
+    {
+      "number": 527,
+      "content": "TEST(AckTrackerTest, TimingFieldsReset)"
+    },
+    {
+      "number": 528,
+      "content": "{"
+    },
+    {
+      "number": 529,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 530,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 531,
+      "content": ""
+    },
+    {
+      "number": 532,
+      "content": "    //"
+    },
+    {
+      "number": 533,
+      "content": "    // Set timing fields"
+    },
+    {
+      "number": 534,
+      "content": "    //"
+    },
+    {
+      "number": 535,
+      "content": "    Tracker.LargestPacketNumberRecvTime = 1234567890;"
+    },
+    {
+      "number": 536,
+      "content": "    Tracker.LargestPacketNumberAcknowledged = 500;"
+    },
+    {
+      "number": 537,
+      "content": "    Tracker.AckElicitingPacketsToAcknowledge = 10;"
+    },
+    {
+      "number": 538,
+      "content": ""
+    },
+    {
+      "number": 539,
+      "content": "    //"
+    },
+    {
+      "number": 540,
+      "content": "    // Reset"
+    },
+    {
+      "number": 541,
+      "content": "    //"
+    },
+    {
+      "number": 542,
+      "content": "    QuicAckTrackerReset(&Tracker);"
+    },
+    {
+      "number": 543,
+      "content": ""
+    },
+    {
+      "number": 544,
+      "content": "    //"
+    },
+    {
+      "number": 545,
+      "content": "    // Verify timing fields are cleared"
+    },
+    {
+      "number": 546,
+      "content": "    //"
+    },
+    {
+      "number": 547,
+      "content": "    ASSERT_EQ(Tracker.LargestPacketNumberRecvTime, 0u);"
+    },
+    {
+      "number": 548,
+      "content": "    ASSERT_EQ(Tracker.LargestPacketNumberAcknowledged, 0u);"
+    },
+    {
+      "number": 549,
+      "content": "    ASSERT_EQ(Tracker.AckElicitingPacketsToAcknowledge, 0u);"
+    },
+    {
+      "number": 550,
+      "content": ""
+    },
+    {
+      "number": 551,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 552,
+      "content": "}"
+    },
+    {
+      "number": 553,
+      "content": ""
+    },
+    {
+      "number": 554,
+      "content": "//"
+    },
+    {
+      "number": 555,
+      "content": "// Test 18: Boolean flags reset verification"
+    },
+    {
+      "number": 556,
+      "content": "// Scenario: Verifies that all boolean flags are properly reset to FALSE."
+    },
+    {
+      "number": 557,
+      "content": "//"
+    },
+    {
+      "number": 558,
+      "content": "TEST(AckTrackerTest, BooleanFlagsReset)"
+    },
+    {
+      "number": 559,
+      "content": "{"
+    },
+    {
+      "number": 560,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 561,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 562,
+      "content": ""
+    },
+    {
+      "number": 563,
+      "content": "    //"
+    },
+    {
+      "number": 564,
+      "content": "    // Set boolean flags to TRUE"
+    },
+    {
+      "number": 565,
+      "content": "    //"
+    },
+    {
+      "number": 566,
+      "content": "    Tracker.AlreadyWrittenAckFrame = TRUE;"
+    },
+    {
+      "number": 567,
+      "content": "    Tracker.NonZeroRecvECN = TRUE;"
+    },
+    {
+      "number": 568,
+      "content": ""
+    },
+    {
+      "number": 569,
+      "content": "    //"
+    },
+    {
+      "number": 570,
+      "content": "    // Reset"
+    },
+    {
+      "number": 571,
+      "content": "    //"
+    },
+    {
+      "number": 572,
+      "content": "    QuicAckTrackerReset(&Tracker);"
+    },
+    {
+      "number": 573,
+      "content": ""
+    },
+    {
+      "number": 574,
+      "content": "    //"
+    },
+    {
+      "number": 575,
+      "content": "    // Verify flags are FALSE"
+    },
+    {
+      "number": 576,
+      "content": "    //"
+    },
+    {
+      "number": 577,
+      "content": "    ASSERT_FALSE(Tracker.AlreadyWrittenAckFrame);"
+    },
+    {
+      "number": 578,
+      "content": "    ASSERT_FALSE(Tracker.NonZeroRecvECN);"
+    },
+    {
+      "number": 579,
+      "content": ""
+    },
+    {
+      "number": 580,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 581,
+      "content": "}"
+    },
+    {
+      "number": 582,
+      "content": ""
+    },
+    {
+      "number": 583,
+      "content": "//"
+    },
+    {
+      "number": 584,
+      "content": "// Test 19: Add many unique packets"
+    },
+    {
+      "number": 585,
+      "content": "// Scenario: Adding a large number of sequential packets should work correctly,"
+    },
+    {
+      "number": 586,
+      "content": "// with all being tracked in a single contiguous range."
+    },
+    {
+      "number": 587,
+      "content": "//"
+    },
+    {
+      "number": 588,
+      "content": "TEST(AckTrackerTest, AddManyUniquePackets)"
+    },
+    {
+      "number": 589,
+      "content": "{"
+    },
+    {
+      "number": 590,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 591,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 592,
+      "content": ""
+    },
+    {
+      "number": 593,
+      "content": "    const uint64_t StartPacket = 1000;"
+    },
+    {
+      "number": 594,
+      "content": "    const uint64_t Count = 100;"
+    },
+    {
+      "number": 595,
+      "content": ""
+    },
+    {
+      "number": 596,
+      "content": "    //"
+    },
+    {
+      "number": 597,
+      "content": "    // Add many sequential packets"
+    },
+    {
+      "number": 598,
+      "content": "    //"
+    },
+    {
+      "number": 599,
+      "content": "    for (uint64_t i = 0; i < Count; i++) {"
+    },
+    {
+      "number": 600,
+      "content": "        ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, StartPacket + i));"
+    },
+    {
+      "number": 601,
+      "content": "    }"
+    },
+    {
+      "number": 602,
+      "content": ""
+    },
+    {
+      "number": 603,
+      "content": "    //"
+    },
+    {
+      "number": 604,
+      "content": "    // Should be a single contiguous range"
+    },
+    {
+      "number": 605,
+      "content": "    //"
+    },
+    {
+      "number": 606,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 1u);"
+    },
+    {
+      "number": 607,
+      "content": ""
+    },
+    {
+      "number": 608,
+      "content": "    uint64_t Min, Max;"
+    },
+    {
+      "number": 609,
+      "content": "    ASSERT_TRUE(QuicRangeGetMinSafe(&Tracker.PacketNumbersReceived, &Min));"
+    },
+    {
+      "number": 610,
+      "content": "    ASSERT_TRUE(QuicRangeGetMaxSafe(&Tracker.PacketNumbersReceived, &Max));"
+    },
+    {
+      "number": 611,
+      "content": "    ASSERT_EQ(Min, StartPacket);"
+    },
+    {
+      "number": 612,
+      "content": "    ASSERT_EQ(Max, StartPacket + Count - 1);"
+    },
+    {
+      "number": 613,
+      "content": ""
+    },
+    {
+      "number": 614,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 615,
+      "content": "}"
+    },
+    {
+      "number": 616,
+      "content": ""
+    },
+    {
+      "number": 617,
+      "content": "//"
+    },
+    {
+      "number": 618,
+      "content": "// Test 20: Alternating packet numbers create multiple ranges"
+    },
+    {
+      "number": 619,
+      "content": "// Scenario: Adding every other packet number should create many separate ranges."
+    },
+    {
+      "number": 620,
+      "content": "//"
+    },
+    {
+      "number": 621,
+      "content": "TEST(AckTrackerTest, AlternatingPacketNumbers)"
+    },
+    {
+      "number": 622,
+      "content": "{"
+    },
+    {
+      "number": 623,
+      "content": "    QUIC_ACK_TRACKER Tracker;"
+    },
+    {
+      "number": 624,
+      "content": "    QuicAckTrackerInitialize(&Tracker);"
+    },
+    {
+      "number": 625,
+      "content": ""
+    },
+    {
+      "number": 626,
+      "content": "    //"
+    },
+    {
+      "number": 627,
+      "content": "    // Add packets 0, 2, 4, 6, 8 (every other)"
+    },
+    {
+      "number": 628,
+      "content": "    //"
+    },
+    {
+      "number": 629,
+      "content": "    for (uint64_t i = 0; i < 10; i += 2) {"
+    },
+    {
+      "number": 630,
+      "content": "        ASSERT_FALSE(QuicAckTrackerAddPacketNumber(&Tracker, i));"
+    },
+    {
+      "number": 631,
+      "content": "    }"
+    },
+    {
+      "number": 632,
+      "content": ""
+    },
+    {
+      "number": 633,
+      "content": "    //"
+    },
+    {
+      "number": 634,
+      "content": "    // Should have 5 separate ranges"
+    },
+    {
+      "number": 635,
+      "content": "    //"
+    },
+    {
+      "number": 636,
+      "content": "    ASSERT_EQ(QuicRangeSize(&Tracker.PacketNumbersReceived), 5u);"
+    },
+    {
+      "number": 637,
+      "content": ""
+    },
+    {
+      "number": 638,
+      "content": "    QuicAckTrackerUninitialize(&Tracker);"
+    },
+    {
+      "number": 639,
+      "content": "}"
+    }
+  ]
+}
