@@ -1,0 +1,241 @@
+{
+  "component": "QUIC_CUBIC",
+  "source": "src/core/cubic.c",
+  "header": "src/core/cubic.h",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "signature": "void CubicCongestionControlInitialize(QUIC_CONGESTION_CONTROL* Cc, const QUIC_SETTINGS_INTERNAL* Settings)",
+      "preconditions": ["Cc non-NULL", "Settings non-NULL", "Connection accessible", "Paths[0] initialized"],
+      "postconditions": ["Function pointers set", "State initialized", "CongestionWindow set"],
+      "line_range": [914, 940]
+    },
+    {
+      "name": "CubicCongestionControlCanSend",
+      "signature": "BOOLEAN CubicCongestionControlCanSend(QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (read-only)"],
+      "returns": "TRUE if can send, FALSE otherwise",
+      "line_range": [128, 135]
+    },
+    {
+      "name": "CubicCongestionControlSetExemption",
+      "signature": "void CubicCongestionControlSetExemption(QUIC_CONGESTION_CONTROL* Cc, uint8_t NumPackets)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["Exemptions = NumPackets"],
+      "line_range": [138, 145]
+    },
+    {
+      "name": "CubicCongestionControlReset",
+      "signature": "void CubicCongestionControlReset(QUIC_CONGESTION_CONTROL* Cc, BOOLEAN FullReset)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["State reset", "BytesInFlight conditionally zeroed"],
+      "line_range": [148, 175]
+    },
+    {
+      "name": "CubicCongestionControlGetSendAllowance",
+      "signature": "uint32_t CubicCongestionControlGetSendAllowance(QUIC_CONGESTION_CONTROL* Cc, uint64_t TimeSinceLastSend, BOOLEAN TimeSinceLastSendValid)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["May update LastSendAllowance"],
+      "returns": "Bytes allowed to send",
+      "line_range": [178, 242]
+    },
+    {
+      "name": "CubicCongestionControlOnDataSent",
+      "signature": "void CubicCongestionControlOnDataSent(QUIC_CONGESTION_CONTROL* Cc, uint32_t NumRetransmittableBytes)",
+      "preconditions": ["Cc initialized", "NumRetransmittableBytes >= 0"],
+      "postconditions": ["BytesInFlight increased", "Exemptions decremented if > 0"],
+      "line_range": [371, 398]
+    },
+    {
+      "name": "CubicCongestionControlOnDataInvalidated",
+      "signature": "BOOLEAN CubicCongestionControlOnDataInvalidated(QUIC_CONGESTION_CONTROL* Cc, uint32_t NumRetransmittableBytes)",
+      "preconditions": ["Cc initialized", "BytesInFlight >= NumRetransmittableBytes"],
+      "postconditions": ["BytesInFlight decreased"],
+      "returns": "TRUE if became unblocked",
+      "line_range": [401, 415]
+    },
+    {
+      "name": "CubicCongestionControlOnDataAcknowledged",
+      "signature": "BOOLEAN CubicCongestionControlOnDataAcknowledged(QUIC_CONGESTION_CONTROL* Cc, const QUIC_ACK_EVENT* AckEvent)",
+      "preconditions": ["Cc initialized", "AckEvent non-NULL with valid fields"],
+      "postconditions": ["BytesInFlight decreased", "CongestionWindow may grow", "HyStart state may change"],
+      "returns": "TRUE if became unblocked",
+      "line_range": [437, 717],
+      "calls_internal": ["CubeRoot", "CubicCongestionHyStartChangeState", "CubicCongestionControlUpdateBlockedState"]
+    },
+    {
+      "name": "CubicCongestionControlOnDataLost",
+      "signature": "void CubicCongestionControlOnDataLost(QUIC_CONGESTION_CONTROL* Cc, const QUIC_LOSS_EVENT* LossEvent)",
+      "preconditions": ["Cc initialized", "LossEvent non-NULL"],
+      "postconditions": ["BytesInFlight decreased", "May enter recovery", "CongestionWindow may reduce"],
+      "line_range": [720, 752],
+      "calls_internal": ["CubicCongestionControlOnCongestionEvent"]
+    },
+    {
+      "name": "CubicCongestionControlOnEcn",
+      "signature": "void CubicCongestionControlOnEcn(QUIC_CONGESTION_CONTROL* Cc, const QUIC_ECN_EVENT* EcnEvent)",
+      "preconditions": ["Cc initialized", "EcnEvent non-NULL"],
+      "postconditions": ["May enter recovery", "CongestionWindow may reduce"],
+      "line_range": [755, 784],
+      "calls_internal": ["CubicCongestionControlOnCongestionEvent"]
+    },
+    {
+      "name": "CubicCongestionControlOnSpuriousCongestionEvent",
+      "signature": "BOOLEAN CubicCongestionControlOnSpuriousCongestionEvent(QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["May revert to previous state if in recovery"],
+      "returns": "TRUE if became unblocked",
+      "line_range": [787, 823]
+    },
+    {
+      "name": "CubicCongestionControlGetNetworkStatistics",
+      "signature": "void CubicCongestionControlGetNetworkStatistics(const QUIC_CONNECTION* Connection, const QUIC_CONGESTION_CONTROL* Cc, QUIC_NETWORK_STATISTICS* NetworkStatistics)",
+      "preconditions": ["All params non-NULL", "Cc initialized"],
+      "postconditions": ["NetworkStatistics populated"],
+      "line_range": [418, 434]
+    },
+    {
+      "name": "CubicCongestionControlLogOutFlowStatus",
+      "signature": "void CubicCongestionControlLogOutFlowStatus(const QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (logging only)"],
+      "line_range": [826, 846]
+    },
+    {
+      "name": "CubicCongestionControlGetExemptions",
+      "signature": "uint8_t CubicCongestionControlGetExemptions(const QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (read-only)"],
+      "returns": "Current exemption count",
+      "line_range": [857, 863]
+    },
+    {
+      "name": "CubicCongestionControlGetBytesInFlightMax",
+      "signature": "uint32_t CubicCongestionControlGetBytesInFlightMax(const QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (read-only)"],
+      "returns": "Maximum BytesInFlight observed",
+      "line_range": [848, 854]
+    },
+    {
+      "name": "CubicCongestionControlGetCongestionWindow",
+      "signature": "uint32_t CubicCongestionControlGetCongestionWindow(const QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (read-only)"],
+      "returns": "Current congestion window",
+      "line_range": [865, 871]
+    },
+    {
+      "name": "CubicCongestionControlIsAppLimited",
+      "signature": "BOOLEAN CubicCongestionControlIsAppLimited(const QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (read-only)"],
+      "returns": "Always FALSE",
+      "line_range": [874, 881]
+    },
+    {
+      "name": "CubicCongestionControlSetAppLimited",
+      "signature": "void CubicCongestionControlSetAppLimited(QUIC_CONGESTION_CONTROL* Cc)",
+      "preconditions": ["Cc initialized"],
+      "postconditions": ["None (no-op)"],
+      "line_range": [884, 890]
+    }
+  ],
+  "internal_functions": [
+    {
+      "name": "CubeRoot",
+      "purpose": "Calculate cube root for CUBIC formula",
+      "line_range": [44, 62],
+      "reachability": "Via OnDataAcknowledged in congestion avoidance"
+    },
+    {
+      "name": "CubicCongestionControlOnCongestionEvent",
+      "purpose": "Handle congestion event (loss or ECN)",
+      "line_range": [271, 368],
+      "reachability": "Via OnDataLost or OnEcn"
+    },
+    {
+      "name": "CubicCongestionControlUpdateBlockedState",
+      "purpose": "Update blocked state and notify connection",
+      "line_range": [247, 268],
+      "reachability": "Via multiple public APIs"
+    },
+    {
+      "name": "CubicCongestionHyStartChangeState",
+      "purpose": "Manage HyStart state transitions",
+      "line_range": [82, 115],
+      "reachability": "Via OnDataAcknowledged, OnDataLost, Reset"
+    },
+    {
+      "name": "CubicCongestionHyStartResetPerRttRound",
+      "purpose": "Reset HyStart per-RTT tracking",
+      "line_range": [117, 125],
+      "reachability": "Via OnDataAcknowledged, Reset, Initialize"
+    },
+    {
+      "name": "QuicConnLogCubic",
+      "purpose": "Log CUBIC state for diagnostics",
+      "line_range": [65, 80],
+      "reachability": "Via multiple public APIs"
+    }
+  ],
+  "state_machine": {
+    "recovery_states": [
+      {
+        "state": "Initial",
+        "flags": "!HasHadCongestionEvent && !IsInRecovery",
+        "transitions": [
+          {"event": "Loss/ECN", "next_state": "InRecovery"}
+        ]
+      },
+      {
+        "state": "InRecovery",
+        "flags": "HasHadCongestionEvent && IsInRecovery",
+        "transitions": [
+          {"event": "ACK after RecoverySentPacketNumber", "next_state": "PostRecovery"},
+          {"event": "Spurious", "next_state": "Initial"}
+        ]
+      },
+      {
+        "state": "PostRecovery",
+        "flags": "HasHadCongestionEvent && !IsInRecovery",
+        "transitions": [
+          {"event": "Another Loss/ECN", "next_state": "InRecovery"}
+        ]
+      }
+    ],
+    "hystart_states": [
+      {
+        "state": "HYSTART_NOT_STARTED",
+        "description": "Initial slow start",
+        "transitions": [
+          {"event": "Delay increase detected", "next_state": "HYSTART_ACTIVE"},
+          {"event": "Loss", "next_state": "HYSTART_DONE"}
+        ]
+      },
+      {
+        "state": "HYSTART_ACTIVE",
+        "description": "Conservative slow start",
+        "transitions": [
+          {"event": "Rounds complete", "next_state": "HYSTART_DONE"},
+          {"event": "RTT decrease", "next_state": "HYSTART_NOT_STARTED"},
+          {"event": "Loss", "next_state": "HYSTART_DONE"}
+        ]
+      },
+      {
+        "state": "HYSTART_DONE",
+        "description": "Congestion avoidance",
+        "transitions": []
+      }
+    ]
+  },
+  "key_invariants": [
+    "CongestionWindow >= MinWindow",
+    "BytesInFlight >= 0",
+    "BytesInFlightMax >= BytesInFlight",
+    "If IsInRecovery, then HasHadCongestionEvent",
+    "If HasHadCongestionEvent, then RecoverySentPacketNumber valid",
+    "HyStartState in {NOT_STARTED, ACTIVE, DONE}"
+  ]
+}
