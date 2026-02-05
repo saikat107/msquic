@@ -1,0 +1,135 @@
+[
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 571,
+    "which_bug": "Potential Division by Zero",
+    "explanation": "In BbrCongestionControlUpdateAckAggregation(), the calculation 'BbrCongestionControlGetBandwidth(Cc) * CxPlatTimeDiff64(Bbr->AckAggregationStartTime, AckEvent->TimeNow) / kMicroSecsInSec / BW_UNIT' could result in division by zero if BbrCongestionControlGetBandwidth() returns 0 (which it does when the sliding window filter fails or has no data). While kMicroSecsInSec and BW_UNIT are constants, the issue is that ExpectedAckBytes calculation proceeds without checking if bandwidth is valid, potentially leading to incorrect comparisons and state corruption.",
+    "reference": "https://cwe.mitre.org/data/definitions/369.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 656,
+    "which_bug": "Integer Overflow in Multiplication",
+    "explanation": "In BbrCongestionControlGetSendAllowance(), line 656: 'BandwidthEst * Bbr->PacingGain * TimeSinceLastSend / GAIN_UNIT' performs multiplication of three uint64_t values before division. With BandwidthEst potentially being very large (UINT64_MAX initially or high bandwidth scenarios), PacingGain around 256-738 (GAIN_UNIT range), and TimeSinceLastSend in microseconds, this multiplication can overflow a uint64_t. The result is then cast to uint32_t at line 655, which can further truncate the value, leading to incorrect send allowance calculations and potential under-utilization or over-sending.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 659,
+    "which_bug": "Integer Overflow in Multiplication",
+    "explanation": "Similar to line 656, line 659 performs 'BandwidthEst * Bbr->PacingGain * TimeSinceLastSend / GAIN_UNIT' which can overflow before the division. This is in the non-STARTUP state path, affecting normal operation. The cast to uint32_t can also truncate large values, potentially causing severe under-estimation of send allowance in high-bandwidth scenarios.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 611,
+    "which_bug": "Integer Overflow in Bandwidth-Delay Product Calculation",
+    "explanation": "In BbrCongestionControlGetTargetCwnd(), the BDP calculation 'BandwidthEst * Bbr->MinRtt / kMicroSecsInSec / BW_UNIT' multiplies BandwidthEst (uint64_t) by MinRtt (uint64_t) before dividing. In high bandwidth scenarios (e.g., 100 Gbps = 12.5GB/s * BW_UNIT = 100,000,000,000) with moderate RTT (e.g., 100ms = 100,000 microseconds), this multiplication can overflow uint64_t. The overflow would result in a dramatically reduced target congestion window, causing severe performance degradation and potentially unstable congestion control behavior.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 146,
+    "which_bug": "Integer Overflow in Bandwidth Calculation",
+    "explanation": "In BbrBandwidthFilterOnPacketAcked(), the SendRate calculation '(kMicroSecsInSec * BW_UNIT * (AckedPacket->TotalBytesSent - AckedPacket->LastAckedPacketInfo.TotalBytesSent) / SendElapsed)' multiplies kMicroSecsInSec (1,000,000) by BW_UNIT (8) by bytes sent. If a large amount of data is sent (e.g., > 2GB in one interval), this multiplication can overflow. While SendElapsed check prevents division by zero, the overflow in the numerator would produce incorrect bandwidth estimates, potentially causing BBR to misidentify available bandwidth and make poor congestion control decisions.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 159,
+    "which_bug": "Integer Overflow in Ack Rate Calculation",
+    "explanation": "Similar to line 146, the AckRate calculation '(kMicroSecsInSec * BW_UNIT * (AckEvent->NumTotalAckedRetransmittableBytes - AckedPacket->LastAckedPacketInfo.TotalBytesAcked) / AckElapsed)' is vulnerable to integer overflow when large amounts of data are acknowledged. This can lead to incorrect delivery rate estimates, causing BBR's bandwidth filter to record inaccurate values and make suboptimal congestion window and pacing decisions.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 612,
+    "which_bug": "Integer Overflow in Target Congestion Window Calculation",
+    "explanation": "In BbrCongestionControlGetTargetCwnd(), after calculating Bdp, the line 'uint64_t TargetCwnd = (Bdp * Gain / GAIN_UNIT) + (kQuantaFactor * Bbr->SendQuantum)' multiplies Bdp by Gain. If Bdp is already large due to high bandwidth or long RTT, multiplying by Gain (which can be up to kHighGain = 738) before dividing by GAIN_UNIT (256) can overflow. The result is cast to uint32_t at line 613, which truncates to a smaller value. This would cause BBR to use an incorrect (likely much smaller) congestion window, severely limiting throughput.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 723,
+    "which_bug": "Integer Overflow in Send Quantum Calculation",
+    "explanation": "In BbrCongestionControlSetSendQuantum(), the calculation 'PacingRate * kMilliSecsInSec / BW_UNIT' multiplies PacingRate (which is Bandwidth * PacingGain / GAIN_UNIT from line 713) by kMilliSecsInSec (1000). For very high pacing rates (e.g., 100+ Gbps networks), this multiplication can overflow uint64_t before the division, resulting in an incorrect send quantum value. While clamped to 64KB, the overflow could cause the value to wrap around and potentially select an inappropriately small quantum, affecting burst sizing and pacing granularity.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 657,
+    "which_bug": "Potential Integer Underflow",
+    "explanation": "In BbrCongestionControlGetSendAllowance(), line 657 calculates 'CongestionWindow * Bbr->PacingGain / GAIN_UNIT - Bbr->BytesInFlight'. If BytesInFlight is greater than the calculated value (which can happen due to exemptions or previous overflows), this unsigned subtraction would underflow, wrapping around to a very large value. This would be passed to CXPLAT_MAX and potentially cause excessive sending, violating congestion control constraints and potentially causing network congestion.",
+    "reference": "https://cwe.mitre.org/data/definitions/191.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 593,
+    "which_bug": "Potential Integer Underflow",
+    "explanation": "In BbrCongestionControlUpdateAckAggregation(), the return statement 'Bbr->AggregatedAckBytes - ExpectedAckBytes' subtracts unsigned integers. While there's a check at line 580 that AggregatedAckBytes <= ExpectedAckBytes causes a reset, there's a race condition window where AggregatedAckBytes is incremented at line 588 before the subtraction. If ExpectedAckBytes calculation overflowed or is somehow larger than AggregatedAckBytes after the increment, this would underflow, returning an incorrect (very large) excess ack value that gets fed into the max ack height filter, corrupting BBR's understanding of network buffering.",
+    "reference": "https://cwe.mitre.org/data/definitions/191.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 663,
+    "which_bug": "Potential Integer Underflow",
+    "explanation": "In BbrCongestionControlGetSendAllowance(), line 663 performs 'CongestionWindow - Bbr->BytesInFlight' without checking if BytesInFlight > CongestionWindow. While line 632 checks this condition earlier, exemptions (handled separately) and race conditions could cause BytesInFlight to exceed CongestionWindow between the check and this subtraction. An underflow here would wrap to a large value, causing SendAllowance to be set to an excessive amount, potentially violating congestion control.",
+    "reference": "https://cwe.mitre.org/data/definitions/191.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 474,
+    "which_bug": "Assertion-Only Safety Check",
+    "explanation": "In BbrCongestionControlOnDataInvalidated(), line 473-474 has 'CXPLAT_DBG_ASSERT(Bbr->BytesInFlight >= NumRetransmittableBytes); Bbr->BytesInFlight -= NumRetransmittableBytes;'. The CXPLAT_DBG_ASSERT is only active in debug builds and becomes a no-op in release builds. If NumRetransmittableBytes > BytesInFlight in a release build (which could happen due to race conditions, corrupted state, or bugs in packet tracking), the subtraction would underflow, setting BytesInFlight to a very large value. This would corrupt the congestion control state, potentially causing the connection to stall (thinking it has massive amounts of data in flight) or violate send constraints.",
+    "reference": "https://cwe.mitre.org/data/definitions/617.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 794,
+    "which_bug": "Assertion-Only Safety Check",
+    "explanation": "In BbrCongestionControlOnDataAcknowledged(), line 794 has 'CXPLAT_DBG_ASSERT(Bbr->BytesInFlight >= AckEvent->NumRetransmittableBytes);' followed by the subtraction at line 795. Similar to line 474, this is a debug-only check. In release builds, if the assertion condition is violated, the subtraction would underflow, corrupting BytesInFlight. This is a critical path executed on every ACK, so any corruption here would immediately affect congestion control decisions and could lead to connection performance problems or failures.",
+    "reference": "https://cwe.mitre.org/data/definitions/617.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 932,
+    "which_bug": "Assertion-Only Safety Check",
+    "explanation": "In BbrCongestionControlOnDataLost(), line 932-933 has the same pattern: 'CXPLAT_DBG_ASSERT(Bbr->BytesInFlight >= LossEvent->NumRetransmittableBytes); Bbr->BytesInFlight -= LossEvent->NumRetransmittableBytes;'. This is executed on packet loss events. If the assertion is violated in a release build, the underflow would corrupt BytesInFlight tracking. Given that this occurs during loss events (already a stressed condition), incorrect BytesInFlight could prevent proper recovery from congestion, potentially leading to connection stalls or excessive retransmissions.",
+    "reference": "https://cwe.mitre.org/data/definitions/617.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 449,
+    "which_bug": "Unbounded Integer Addition",
+    "explanation": "In BbrCongestionControlOnDataSent(), line 449 performs 'Bbr->BytesInFlight += NumRetransmittableBytes;' without checking for overflow. While unlikely in normal operation (as BytesInFlight should be bounded by congestion window), repeated increments without corresponding decrements (due to bugs in ACK handling or packet tracking) could cause BytesInFlight to overflow. If BytesInFlight wraps to a small value, BBR would incorrectly think it has little data in flight and start sending excessively, causing network congestion and violating congestion control principles.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 495,
+    "which_bug": "Unbounded Integer Addition",
+    "explanation": "In BbrCongestionControlUpdateRecoveryWindow(), line 495 performs 'Bbr->RecoveryWindow += BytesAcked;' in the RECOVERY_STATE_GROWTH state without overflow checking. While the recovery window is expected to be bounded by network conditions, repeated additions over a long recovery period or with large BytesAcked values could theoretically overflow RecoveryWindow. An overflowed RecoveryWindow would wrap to a small value, causing BBR to severely restrict sending during recovery, potentially leading to connection underutilization or timeout.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 588,
+    "which_bug": "Unbounded Integer Addition",
+    "explanation": "In BbrCongestionControlUpdateAckAggregation(), line 588 performs 'Bbr->AggregatedAckBytes += AckEvent->NumRetransmittableBytes;' without overflow checking. While aggregation epochs are supposed to reset periodically (line 581), if resets fail to occur due to bugs in the comparison logic or timestamp issues, AggregatedAckBytes could accumulate indefinitely and overflow. An overflow would wrap the value to a small number, causing incorrect excess ack calculations and corrupting the max ack height filter used for buffer estimation.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 762,
+    "which_bug": "Unbounded Integer Addition",
+    "explanation": "In BbrCongestionControlUpdateCongestionWindow(), line 762 performs 'CongestionWindow += (uint32_t)AckedBytes;' in the STARTUP phase (when !BtlbwFound) without overflow checking. In STARTUP, BBR aggressively grows the congestion window with each ACK. If the application sends very rapidly or if ACKs are aggregated, CongestionWindow could overflow uint32_t. An overflow would wrap to a small value, causing sudden severe throughput restriction after the wrap, leading to connection performance collapse.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  },
+  {
+    "file_path": "src/core/bbr.c",
+    "line_no": 810,
+    "which_bug": "Unbounded Counter Increment",
+    "explanation": "In BbrCongestionControlOnDataAcknowledged(), line 810 performs 'Bbr->RoundTripCounter++;' without overflow checking. While RoundTripCounter is a uint64_t and would take an extremely long connection to overflow (billions of years at typical RTTs), the counter is used in comparisons and filters. If it were to overflow and wrap to 0, it would break round-trip detection logic, potentially causing sliding window filters to expire prematurely or behave incorrectly, corrupting bandwidth and ack aggregation estimates.",
+    "reference": "https://cwe.mitre.org/data/definitions/190.html"
+  }
+]
