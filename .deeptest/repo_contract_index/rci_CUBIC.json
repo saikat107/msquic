@@ -1,0 +1,43 @@
+{
+  "component": "QUIC_CONGESTION_CONTROL_CUBIC",
+  "source_file": "src/core/cubic.c",
+  "header_file": "src/core/cubic.h",
+  "public_functions": [
+    "CubicCongestionControlInitialize",
+    "CubicCongestionControlCanSend",
+    "CubicCongestionControlSetExemption",
+    "CubicCongestionControlReset",
+    "CubicCongestionControlGetSendAllowance",
+    "CubicCongestionControlOnDataSent",
+    "CubicCongestionControlOnDataInvalidated",
+    "CubicCongestionControlOnDataAcknowledged",
+    "CubicCongestionControlOnDataLost",
+    "CubicCongestionControlOnEcn",
+    "CubicCongestionControlOnSpuriousCongestionEvent",
+    "CubicCongestionControlGetNetworkStatistics",
+    "CubicCongestionControlGetBytesInFlightMax",
+    "CubicCongestionControlGetExemptions",
+    "CubicCongestionControlGetCongestionWindow",
+    "CubicCongestionControlIsAppLimited",
+    "CubicCongestionControlSetAppLimited",
+    "CubicCongestionControlLogOutFlowStatus",
+    "CubeRoot"
+  ],
+  "private_functions": [
+    "CubicCongestionHyStartChangeState",
+    "CubicCongestionHyStartResetPerRttRound",
+    "CubicCongestionControlUpdateBlockedState",
+    "CubicCongestionControlOnCongestionEvent",
+    "QuicConnLogCubic"
+  ],
+  "state_machine": {
+    "name": "HyStart++",
+    "states": ["HYSTART_NOT_STARTED", "HYSTART_ACTIVE", "HYSTART_DONE"],
+    "transitions": [
+      {"from": "HYSTART_NOT_STARTED", "to": "HYSTART_ACTIVE", "trigger": "RTT increase detected"},
+      {"from": "HYSTART_ACTIVE", "to": "HYSTART_NOT_STARTED", "trigger": "RTT decreased"},
+      {"from": "HYSTART_ACTIVE", "to": "HYSTART_DONE", "trigger": "ConservativeSlowStartRounds exhausted"},
+      {"from": "*", "to": "HYSTART_DONE", "trigger": "Congestion event"}
+    ]
+  }
+}
