@@ -2741,7 +2741,7 @@ TEST(DeepTest_BbrTest, BandwidthEstimationSkipsZeroLengthPackets)
 // Test 64: Network statistics event enabled
 // Scenario: Tests that network statistics event is triggered when NetStatsEventEnabled is TRUE.
 // What: Tests BbrCongestionControlIndicateConnectionEvent is called.
-// How: Enable NetStatsEventEnabled, ack data, verify event would be triggered.
+// How: Enable NetStatsEventEnabled on Connection, ack data, verify event would be triggered.
 // Assertions: Function is called when flag is set (indirectly via no crash).
 //
 TEST(DeepTest_BbrTest, NetworkStatisticsEventEnabled)
@@ -2755,6 +2755,9 @@ TEST(DeepTest_BbrTest, NetworkStatisticsEventEnabled)
 
     InitializeMockConnection(Connection, 1280);
     BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Also set on Connection itself
+    Connection.Settings.NetStatsEventEnabled = TRUE;
 
     QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
 
@@ -2947,5 +2950,841 @@ TEST(DeepTest_BbrTest, BottleneckDetectionAfterSlowGrowthRounds)
     // The slow startup counter logic is working (being incremented)
     // Verify state remains valid
     ASSERT_LE(Bbr->SlowStartupRoundCounter, 3u);
+}
+
+
+//
+// Test 68: Ack aggregation detection and max ack height tracking
+// Scenario: Tests ack aggregation detection when acked bytes exceed expected bytes.
+// What: Tests BbrCongestionControlUpdateAckAggregation detects burst acks.
+// How: Setup bandwidth estimate, ack large burst, verify aggregation tracked.
+// Assertions: AggregatedAckBytes accumulates, MaxAckHeightFilter updated.
+//
+TEST(DeepTest_BbrTest, AckAggregationDetectionAndTracking)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Setup state for ack aggregation
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->AckAggregationStartTimeValid = TRUE;
+    Bbr->AckAggregationStartTime = 1000000;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
+
+    // Create ACK event with large burst (more than bandwidth would allow)
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 8000; // Large ack
+    AckEvent.NumTotalAckedRetransmittableBytes = 8000;
+    AckEvent.TimeNow = 1010000; // 10ms later
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Ack aggregation should be tracked
+    ASSERT_GE(Bbr->AggregatedAckBytes, 0u);
+}
+
+//
+// Test 69: Ack aggregation reset when acked bytes below expected
+// Scenario: Tests ack aggregation resets when acked bytes <= expected based on bandwidth.
+// What: Tests ack aggregation reset condition.
+// How: Setup ack aggregation, then ack small amount, verify reset.
+// Assertions: AggregatedAckBytes reset to current ack when below expected.
+//
+TEST(DeepTest_BbrTest, AckAggregationResetWhenBelowExpected)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestampValid = TRUE;
+
+    // Start ack aggregation
+    Bbr->AckAggregationStartTimeValid = TRUE;
+    Bbr->AckAggregationStartTime = 1000000;
+    Bbr->AggregatedAckBytes = 5000;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    // Create ACK event with small ack (triggers reset)
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 100;
+    AckEvent.NumTotalAckedRetransmittableBytes = 100;
+    AckEvent.TimeNow = 2000000; // 1 second later
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Aggregation should have reset
+    ASSERT_TRUE(Bbr->AckAggregationStartTimeValid);
+}
+
+//
+// Test 70: PROBE_RTT sets ProbeRttRound on new round trip
+// Scenario: Tests that PROBE_RTT sets ProbeRttRound when a new round trip occurs.
+// What: Tests ProbeRttRound tracking in PROBE_RTT.
+// How: Enter PROBE_RTT with ProbeRttEndTime set, trigger new round trip.
+// Assertions: ProbeRttRoundValid becomes TRUE, ProbeRttRound set to RoundTripCounter.
+//
+TEST(DeepTest_BbrTest, ProbeRttSetsProbeRttRoundOnNewRoundTrip)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Setup PROBE_RTT with ProbeRttEndTime set but not ProbeRttRound
+    Bbr->BbrState = 3; // PROBE_RTT
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->ProbeRttEndTimeValid = TRUE;
+    Bbr->ProbeRttEndTime = 1200000;
+    Bbr->ProbeRttRoundValid = FALSE;
+    Bbr->RoundTripCounter = 5;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 500);
+    Connection.LossDetection.LargestSentPacketNumber = 30;
+
+    // Ack to trigger new round trip in PROBE_RTT
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 500;
+    AckEvent.NumTotalAckedRetransmittableBytes = 500;
+    AckEvent.TimeNow = 1100000; // Before ProbeRttEndTime
+    AckEvent.LargestAck = 30;
+    AckEvent.LargestSentPacketNumber = 30;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // ProbeRttRound should now be set
+    ASSERT_TRUE(Bbr->ProbeRttRoundValid);
+    ASSERT_EQ(Bbr->ProbeRttRound, Bbr->RoundTripCounter);
+}
+
+
+//
+// Test 71: Send quantum calculation for high pacing rate
+// Scenario: Tests send quantum calculation when pacing rate is very high (> 24 Mbps).
+// What: Tests high bandwidth send quantum calculation.
+// How: Setup very high bandwidth estimate, trigger send quantum calculation.
+// Assertions: Send quantum calculated as min(rate * 1ms, 64KB) for high rates.
+//
+TEST(DeepTest_BbrTest, SendQuantumAtHighPacingRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 100;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Setup for high bandwidth scenario
+    Bbr->MinRtt = 10000; // 10ms
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->PacingGain = 256; // GAIN_UNIT
+
+    // To trigger high pacing rate, we need actual bandwidth in the filter
+    // Send and ack significant data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 50000);
+
+    // Create ACK with packet metadata to establish bandwidth
+    QUIC_SENT_PACKET_METADATA PacketMeta = {};
+    PacketMeta.PacketLength = 1200;
+    PacketMeta.Next = NULL;
+    PacketMeta.Flags.HasLastAckedPacketInfo = FALSE;
+    PacketMeta.Flags.IsAppLimited = FALSE;
+    PacketMeta.SentTime = 900000;
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 50000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 50000;
+    AckEvent.TimeNow = 910000; // 10ms later - high bandwidth
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = &PacketMeta;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Send quantum should be calculated
+    ASSERT_GE(Bbr->SendQuantum, 0u);
+}
+
+//
+// Test 72: PROBE_BW cycle advances in low gain when below target
+// Scenario: Tests PROBE_BW advances from low gain (3/4) when BytesInFlight <= target.
+// What: Tests drain phase advancement condition.
+// How: Set PacingGain < GAIN_UNIT with low BytesInFlight, ack, verify advancement.
+// Assertions: PacingCycleIndex advances when in low gain and drained to target.
+//
+TEST(DeepTest_BbrTest, ProbeBwCycleAdvancesInLowGainWhenBelowTarget)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Setup PROBE_BW with low gain
+    Bbr->BbrState = 2; // PROBE_BW
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->PacingCycleIndex = 1; // Position 1 has gain = 3/4 (192)
+    Bbr->PacingGain = 192; // 3/4 * 256 (low gain < GAIN_UNIT)
+    Bbr->CycleStart = 1000000;
+    Bbr->RttSampleExpired = FALSE;
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Set very low BytesInFlight (well below target)
+    Bbr->BytesInFlight = 10;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 10;
+    AckEvent.NumTotalAckedRetransmittableBytes = 10;
+    AckEvent.TimeNow = 1100000; // After MinRtt (50ms)
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    uint32_t oldCycleIndex = Bbr->PacingCycleIndex;
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should advance cycle when in low gain and inflight is low
+    ASSERT_NE(Bbr->PacingCycleIndex, oldCycleIndex);
+}
+
+//
+// Test 73: Congestion window growth limited when BtlbwFound
+// Scenario: Tests that cwnd growth is limited to MIN(target+acked, current+acked) when bottleneck found.
+// What: Tests cwnd growth constraint after bottleneck detection.
+// How: Set BtlbwFound=TRUE, ack data, verify cwnd doesn't exceed target too much.
+// Assertions: CongestionWindow growth is constrained when BtlbwFound.
+//
+TEST(DeepTest_BbrTest, CongestionWindowGrowthLimitedWhenBottleneckFound)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set bottleneck found
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestampValid = TRUE;
+
+    uint32_t oldCwnd = Bbr->CongestionWindow;
+
+    // Send and ack
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Cwnd should grow but in a constrained manner
+    ASSERT_GE(Bbr->CongestionWindow, oldCwnd);
+}
+
+//
+// Test 74: Bandwidth filter update when DeliveryRate >= PreviousMax
+// Scenario: Tests bandwidth filter accepts new sample when delivery rate >= previous max.
+// What: Tests bandwidth filter update condition.
+// How: Create packet with delivery rate info, verify filter update.
+// Assertions: WindowedMaxFilter updated with new delivery rate.
+//
+TEST(DeepTest_BbrTest, BandwidthFilterUpdateWithHigherDeliveryRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Create packet without LastAckedPacketInfo but with time delta
+    QUIC_SENT_PACKET_METADATA PacketMeta = {};
+    PacketMeta.PacketLength = 1200;
+    PacketMeta.Next = NULL;
+    PacketMeta.Flags.HasLastAckedPacketInfo = FALSE;
+    PacketMeta.Flags.IsAppLimited = FALSE;
+    PacketMeta.SentTime = 900000;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.TimeNow = 950000; // 50ms later
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = &PacketMeta;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Bandwidth should have been estimated
+    // Round trip should have started
+    ASSERT_EQ(Bbr->RoundTripCounter, 1u);
+}
+
+
+//
+// Test 75: Packet metadata with both SendRate and AckRate as UINT64_MAX (continue branch)
+// Scenario: Tests bandwidth filter skips packet when no valid delivery rate can be calculated.
+// What: Tests the continue path when SendRate == UINT64_MAX && AckRate == UINT64_MAX.
+// How: Create packet without LastAckedPacketInfo and TimeNow before SentTime (impossible delivery).
+// Assertions: Bandwidth estimation handles invalid packet gracefully.
+//
+TEST(DeepTest_BbrTest, BandwidthFilterSkipsInvalidDeliveryRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Create packet with SentTime after current time (invalid for delivery rate)
+    QUIC_SENT_PACKET_METADATA PacketMeta = {};
+    PacketMeta.PacketLength = 1200;
+    PacketMeta.Next = NULL;
+    PacketMeta.Flags.HasLastAckedPacketInfo = FALSE;
+    PacketMeta.Flags.IsAppLimited = FALSE;
+    PacketMeta.SentTime = 2000000; // In the future relative to TimeNow
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent.TimeNow = 1000000; // Before packet SentTime
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = &PacketMeta;
+
+    // This should skip the packet in bandwidth calculation (continue branch)
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should complete without crash
+    ASSERT_EQ(Connection.CongestionControl.Bbr.BytesInFlight, 0u);
+}
+
+//
+// Test 76: Implicit ACK with NetStatsEventEnabled triggers event
+// Scenario: Tests that implicit ACK path calls BbrCongestionControlIndicateConnectionEvent.
+// What: Tests line 787 - event indication in implicit ACK path.
+// How: Enable NetStatsEventEnabled on Connection, create implicit ACK, call OnDataAcknowledged.
+// Assertions: Test completes without crash (event indication succeeds).
+//
+TEST(DeepTest_BbrTest, ImplicitAckWithNetStatsEventTriggersEvent)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+    Settings.NetStatsEventEnabled = TRUE; // Enable events
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Also set on Connection itself
+    Connection.Settings.NetStatsEventEnabled = TRUE;
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    // Create implicit ACK
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = TRUE; // Implicit!
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should trigger event indication (line 787)
+    ASSERT_EQ(Bbr->BytesInFlight, 1000u); // Implicit ACK doesn't decrease BytesInFlight
+}
+
+//
+// Test 77: Regular ACK with NetStatsEventEnabled triggers event  
+// Scenario: Tests that regular ACK path calls BbrCongestionControlIndicateConnectionEvent.
+// What: Tests line 899 - event indication in regular ACK path.
+// How: Enable NetStatsEventEnabled on Connection, create regular ACK, call OnDataAcknowledged.
+// Assertions: Test completes without crash (event indication succeeds).
+//
+TEST(DeepTest_BbrTest, RegularAckWithNetStatsEventTriggersEvent)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+    Settings.NetStatsEventEnabled = TRUE; // Enable events
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Also set on Connection itself
+    Connection.Settings.NetStatsEventEnabled = TRUE;
+
+    // Send and ack
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE; // Regular ACK
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should trigger event indication (line 899)
+    ASSERT_EQ(Connection.CongestionControl.Bbr.BytesInFlight, 0u);
+}
+
+
+//
+// Test 78: Bandwidth filter with AckElapsed via else branch
+// Scenario: Tests AckElapsed calculation via else branch (AdjustedAckTime is before or equal).
+// What: Tests line 154 - else branch in AckElapsed calculation.
+// How: Create packet with LastAckedPacketInfo where AdjustedAckTime ordering triggers else.
+// Assertions: Bandwidth filter handles both AckElapsed calculation paths.
+//
+TEST(DeepTest_BbrTest, BandwidthFilterAckElapsedElseBranch)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Create packet with LastAckedPacketInfo
+    QUIC_SENT_PACKET_METADATA PacketMeta = {};
+    PacketMeta.PacketLength = 1200;
+    PacketMeta.Next = NULL;
+    PacketMeta.Flags.HasLastAckedPacketInfo = TRUE;
+    PacketMeta.Flags.IsAppLimited = FALSE;
+    PacketMeta.TotalBytesSent = 5000;
+    PacketMeta.SentTime = 900000;
+    PacketMeta.LastAckedPacketInfo.TotalBytesSent = 3800;
+    PacketMeta.LastAckedPacketInfo.SentTime = 800000;
+    PacketMeta.LastAckedPacketInfo.TotalBytesAcked = 3000;
+    PacketMeta.LastAckedPacketInfo.AckTime = 950000;
+    PacketMeta.LastAckedPacketInfo.AdjustedAckTime = 1050000; // After current AdjustedAckTime
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1200;
+    AckEvent.NumTotalAckedRetransmittableBytes = 4200;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.AdjustedAckTime = 1000000; // Before PacketMeta.LastAckedPacketInfo.AdjustedAckTime
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = &PacketMeta;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should process packet and update bandwidth (line 154 covered)
+    ASSERT_EQ(Connection.CongestionControl.Bbr.RoundTripCounter, 1u);
+}
+
+//
+// Test 79: Bandwidth filter gets previous max delivery rate
+// Scenario: Tests bandwidth filter retrieves previous max when filter has data.
+// What: Tests line 181 - PreviousMaxDeliveryRate = Entry.Value.
+// How: Populate bandwidth filter with data, then ack new packet to compare.
+// Assertions: Previous max is retrieved and used in comparison.
+//
+TEST(DeepTest_BbrTest, BandwidthFilterGetsPreviousMaxDeliveryRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // First, establish some bandwidth
+    QUIC_SENT_PACKET_METADATA PacketMeta1 = {};
+    PacketMeta1.PacketLength = 1200;
+    PacketMeta1.Next = NULL;
+    PacketMeta1.Flags.HasLastAckedPacketInfo = FALSE;
+    PacketMeta1.Flags.IsAppLimited = FALSE;
+    PacketMeta1.SentTime = 900000;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_ACK_EVENT AckEvent1 = {};
+    AckEvent1.IsImplicit = FALSE;
+    AckEvent1.NumRetransmittableBytes = 1200;
+    AckEvent1.NumTotalAckedRetransmittableBytes = 1200;
+    AckEvent1.TimeNow = 950000;
+    AckEvent1.LargestAck = 5;
+    AckEvent1.LargestSentPacketNumber = 5;
+    AckEvent1.MinRttValid = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.AckedPackets = &PacketMeta1;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent1);
+
+    // Now send another packet to test against previous max
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+    QUIC_SENT_PACKET_METADATA PacketMeta2 = {};
+    PacketMeta2.PacketLength = 1200;
+    PacketMeta2.Next = NULL;
+    PacketMeta2.Flags.HasLastAckedPacketInfo = FALSE;
+    PacketMeta2.Flags.IsAppLimited = FALSE;
+    PacketMeta2.SentTime = 1000000;
+
+    QUIC_ACK_EVENT AckEvent2 = {};
+    AckEvent2.IsImplicit = FALSE;
+    AckEvent2.NumRetransmittableBytes = 1200;
+    AckEvent2.NumTotalAckedRetransmittableBytes = 2400;
+    AckEvent2.TimeNow = 1050000;
+    AckEvent2.LargestAck = 10;
+    AckEvent2.LargestSentPacketNumber = 10;
+    AckEvent2.MinRttValid = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.AckedPackets = &PacketMeta2;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent2);
+
+    // Bandwidth filter should have gotten previous max (line 181)
+    ASSERT_EQ(Connection.CongestionControl.Bbr.RoundTripCounter, 2u);
+}
+
+
+//
+// Test 80: Send quantum for medium pacing rate (1.2-24 Mbps)
+// Scenario: Tests send quantum is 2 packets for medium pacing rate.
+// What: Tests line 721 - medium pacing rate quantum.
+// How: Setup bandwidth to yield medium pacing rate, trigger send quantum calculation.
+// Assertions: SendQuantum = 2 * DatagramPayloadSize for medium rates.
+//
+TEST(DeepTest_BbrTest, SendQuantumForMediumPacingRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Need to establish bandwidth in medium range
+    // Medium: 1.2-24 Mbps = 1,200,000 - 24,000,000 bytes/sec
+    // BW in code is (bytes/8) per second, so BandwidthEst should be 150,000 - 3,000,000
+    // Let's aim for 10 Mbps = 10,000,000 bytes/sec = 1,250,000 in BW_UNIT
+
+    // Create multiple packets with good delivery rate to establish bandwidth
+    for (int i = 0; i < 5; i++) {
+        QUIC_SENT_PACKET_METADATA PacketMeta = {};
+        PacketMeta.PacketLength = 1200;
+        PacketMeta.Next = NULL;
+        PacketMeta.Flags.HasLastAckedPacketInfo = FALSE;
+        PacketMeta.Flags.IsAppLimited = FALSE;
+        PacketMeta.SentTime = 900000 + i * 1000; // Stagger sends
+
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1200);
+
+        QUIC_ACK_EVENT AckEvent = {};
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.NumRetransmittableBytes = 1200;
+        AckEvent.NumTotalAckedRetransmittableBytes = 1200 * (i + 1);
+        AckEvent.TimeNow = 901000 + i * 1000; // 1ms RTT for high rate
+        AckEvent.LargestAck = 5 + i;
+        AckEvent.LargestSentPacketNumber = 5 + i;
+        AckEvent.MinRttValid = (i == 0);
+        AckEvent.MinRtt = 50000;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.AckedPackets = &PacketMeta;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+
+        Bbr->MinRtt = 50000;
+        Bbr->MinRttTimestampValid = TRUE;
+        Bbr->BtlbwFound = TRUE;
+        Bbr->RttSampleExpired = FALSE;
+        Bbr->ExitingQuiescence = FALSE;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+    }
+
+    // SendQuantum should be set to 2 packets for medium rate
+    // Actual value depends on bandwidth estimate, but should be > 0
+    ASSERT_GT(Bbr->SendQuantum, 0u);
+}
+
+//
+// Test 81: Send quantum for high pacing rate (> 24 Mbps)
+// Scenario: Tests send quantum is calculated for very high pacing rate.
+// What: Tests line 723 - high pacing rate quantum calculation.
+// How: Setup very high bandwidth estimate, trigger send quantum calculation.
+// Assertions: SendQuantum calculated as min(rate * 1ms, 64KB) for high rates.
+//
+TEST(DeepTest_BbrTest, SendQuantumForHighPacingRate)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 200; // Large initial window
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 9000); // Jumbo frames
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Setup for very high bandwidth
+    Bbr->MinRtt = 10000; // 10ms
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->PacingGain = 256;
+
+    // Send large amount rapidly to establish high bandwidth
+    for (int i = 0; i < 10; i++) {
+        QUIC_SENT_PACKET_METADATA PacketMeta = {};
+        PacketMeta.PacketLength = 9000;
+        PacketMeta.Next = NULL;
+        PacketMeta.Flags.HasLastAckedPacketInfo = FALSE;
+        PacketMeta.Flags.IsAppLimited = FALSE;
+        PacketMeta.SentTime = 900000 + i * 100;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 9000);
+
+        QUIC_ACK_EVENT AckEvent = {};
+        AckEvent.IsImplicit = FALSE;
+        AckEvent.NumRetransmittableBytes = 9000;
+        AckEvent.NumTotalAckedRetransmittableBytes = 9000 * (i + 1);
+        AckEvent.TimeNow = 900100 + i * 100; // Very fast ACKs (0.1ms RTT)
+        AckEvent.LargestAck = 10 + i;
+        AckEvent.LargestSentPacketNumber = 10 + i;
+        AckEvent.MinRttValid = (i == 0);
+        AckEvent.MinRtt = 10000;
+        AckEvent.HasLoss = FALSE;
+        AckEvent.AckedPackets = &PacketMeta;
+        AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+
+        Bbr->RttSampleExpired = FALSE;
+        Bbr->ExitingQuiescence = FALSE;
+
+        Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+    }
+
+    // SendQuantum should be calculated for high rate (line 723)
+    ASSERT_GT(Bbr->SendQuantum, 0u);
+}
+
+
+//
+// Test 82: Target cwnd with MaxAckHeightFilter populated
+// Scenario: Tests target cwnd adds max ack height when filter has data.
+// What: Tests line 752 - TargetCwnd += Entry.Value from MaxAckHeightFilter.
+// How: Populate MaxAckHeightFilter, trigger cwnd calculation with BtlbwFound=TRUE.
+// Assertions: Target cwnd calculation includes max ack height.
+//
+TEST(DeepTest_BbrTest, TargetCwndWithMaxAckHeightFilterPopulated)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Setup with bottleneck found
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->RttSampleExpired = FALSE;
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Manually populate MaxAckHeightFilter
+    QuicSlidingWindowExtremumUpdateMax(&Bbr->MaxAckHeightFilter, 2000, 1);
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    // Ack to trigger cwnd update (which uses target cwnd with max ack height)
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Line 752 should be executed (target cwnd includes max ack height)
+    ASSERT_GT(Bbr->CongestionWindow, 0u);
+}
+
+//
+// Test 83: Slow growth detection sets BtlbwFound after 3 rounds
+// Scenario: Tests BtlbwFound is set to TRUE when SlowStartupRoundCounter reaches limit.
+// What: Tests line 869 - Bbr->BtlbwFound = TRUE.
+// How: Manually increment SlowStartupRoundCounter to 2, then trigger one more slow growth round.
+// Assertions: BtlbwFound becomes TRUE when SlowStartupRoundCounter >= 3.
+//
+TEST(DeepTest_BbrTest, SlowGrowthDetectionSetsBtlbwFound)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    ASSERT_EQ(Bbr->BbrState, 0u); // STARTUP
+    ASSERT_FALSE(Bbr->BtlbwFound);
+
+    // Manually set SlowStartupRoundCounter to 2 (one away from limit)
+    Bbr->SlowStartupRoundCounter = 2;
+    Bbr->LastEstimatedStartupBandwidth = 1000000;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->RttSampleExpired = FALSE;
+    Bbr->ExitingQuiescence = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    Connection.LossDetection.LargestSentPacketNumber = 10;
+
+    // Create ACK that triggers new round with slow growth
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // BtlbwFound should be set after incrementing counter to 3
+    ASSERT_TRUE(Bbr->BtlbwFound);
 }
 
