@@ -417,3 +417,947 @@ TEST(DeepTest_BbrTest, SetAppLimitedWhenConditionNotMet)
     ASSERT_FALSE(Connection.CongestionControl.QuicCongestionControlIsAppLimited(&Connection.CongestionControl));
 }
 
+
+//
+// Test 11: OnDataSent basic behavior
+// Scenario: Tests OnDataSent correctly updates BytesInFlight and decrements exemptions.
+// What: Tests the data sent event handling.
+// How: Call OnDataSent with different byte amounts, verify BytesInFlight increases and exemptions decrease.
+// Assertions: BytesInFlight increases by sent bytes, Exemptions decrements when > 0, BytesInFlightMax updates.
+//
+TEST(DeepTest_BbrTest, OnDataSentBasicBehavior)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Initially BytesInFlight should be 0
+    ASSERT_EQ(Bbr->BytesInFlight, 0u);
+
+    // Send some data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    ASSERT_EQ(Bbr->BytesInFlight, 1000u);
+
+    // Send more data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 500);
+    ASSERT_EQ(Bbr->BytesInFlight, 1500u);
+
+    // BytesInFlightMax should track the maximum
+    ASSERT_GE(Bbr->BytesInFlightMax, 1500u);
+}
+
+//
+// Test 12: OnDataSent with exemptions
+// Scenario: Tests that OnDataSent decrements exemptions when they are set.
+// What: Tests exemption handling during data sending.
+// How: Set exemptions, call OnDataSent multiple times, verify exemptions decrement.
+// Assertions: Exemptions decrement by 1 for each OnDataSent call until reaching 0.
+//
+TEST(DeepTest_BbrTest, OnDataSentWithExemptions)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set exemptions
+    Bbr->Exemptions = 3;
+
+    // Each OnDataSent should decrement exemptions
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    ASSERT_EQ(Bbr->Exemptions, 2u);
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    ASSERT_EQ(Bbr->Exemptions, 1u);
+
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    ASSERT_EQ(Bbr->Exemptions, 0u);
+
+    // Should stay at 0
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    ASSERT_EQ(Bbr->Exemptions, 0u);
+}
+
+//
+// Test 13: OnDataSent sets ExitingQuiescence
+// Scenario: Tests that OnDataSent sets ExitingQuiescence when transitioning from idle while app-limited.
+// What: Tests the quiescence exit flag setting.
+// How: Set app-limited state with BytesInFlight=0, call OnDataSent, verify ExitingQuiescence set.
+// Assertions: ExitingQuiescence becomes TRUE when sending data from idle app-limited state.
+//
+TEST(DeepTest_BbrTest, OnDataSentSetsExitingQuiescence)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set app-limited state
+    Bbr->BandwidthFilter.AppLimited = TRUE;
+    Bbr->BytesInFlight = 0;
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Send data from idle state
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    // Should set ExitingQuiescence
+    ASSERT_TRUE(Bbr->ExitingQuiescence);
+}
+
+//
+// Test 14: OnDataInvalidated basic behavior
+// Scenario: Tests OnDataInvalidated correctly decreases BytesInFlight.
+// What: Tests data invalidation (e.g., cancelled stream data).
+// How: Send data to increase BytesInFlight, then invalidate some, verify BytesInFlight decreases.
+// Assertions: BytesInFlight decreases by invalidated bytes.
+//
+TEST(DeepTest_BbrTest, OnDataInvalidatedBasicBehavior)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send data first
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
+    ASSERT_EQ(Bbr->BytesInFlight, 5000u);
+
+    // Invalidate some data
+    Connection.CongestionControl.QuicCongestionControlOnDataInvalidated(&Connection.CongestionControl, 2000);
+    ASSERT_EQ(Bbr->BytesInFlight, 3000u);
+
+    // Invalidate more
+    Connection.CongestionControl.QuicCongestionControlOnDataInvalidated(&Connection.CongestionControl, 1000);
+    ASSERT_EQ(Bbr->BytesInFlight, 2000u);
+}
+
+//
+// Test 15: Reset with FullReset=TRUE
+// Scenario: Tests Reset with FullReset=TRUE resets all state including BytesInFlight.
+// What: Tests full reset of BBR state machine.
+// How: Modify BBR state, call Reset(TRUE), verify all state reset to initial values.
+// Assertions: All state variables reset, BytesInFlight=0, BBR state=STARTUP.
+//
+TEST(DeepTest_BbrTest, ResetWithFullReset)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Modify state
+    Bbr->BytesInFlight = 5000;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->RoundTripCounter = 100;
+    Bbr->Exemptions = 5;
+
+    // Full reset
+    Connection.CongestionControl.QuicCongestionControlReset(&Connection.CongestionControl, TRUE);
+
+    // Verify reset
+    ASSERT_EQ(Bbr->BytesInFlight, 0u);
+    ASSERT_EQ(Bbr->Exemptions, 0u);
+    ASSERT_FALSE(Bbr->BtlbwFound);
+    ASSERT_EQ(Bbr->RoundTripCounter, 0u);
+    ASSERT_EQ(Bbr->BbrState, 0u); // BBR_STATE_STARTUP
+    ASSERT_EQ(Bbr->RecoveryState, 0u); // RECOVERY_STATE_NOT_RECOVERY
+}
+
+//
+// Test 16: Reset with FullReset=FALSE
+// Scenario: Tests Reset with FullReset=FALSE preserves BytesInFlight.
+// What: Tests partial reset of BBR state machine.
+// How: Modify BBR state including BytesInFlight, call Reset(FALSE), verify BytesInFlight preserved.
+// Assertions: Most state reset but BytesInFlight preserved.
+//
+TEST(DeepTest_BbrTest, ResetWithoutFullReset)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Modify state
+    Bbr->BytesInFlight = 5000;
+    Bbr->BtlbwFound = TRUE;
+    Bbr->RoundTripCounter = 100;
+
+    // Partial reset
+    Connection.CongestionControl.QuicCongestionControlReset(&Connection.CongestionControl, FALSE);
+
+    // BytesInFlight should be preserved
+    ASSERT_EQ(Bbr->BytesInFlight, 5000u);
+    
+    // Other state should be reset
+    ASSERT_FALSE(Bbr->BtlbwFound);
+    ASSERT_EQ(Bbr->RoundTripCounter, 0u);
+    ASSERT_EQ(Bbr->BbrState, 0u); // BBR_STATE_STARTUP
+}
+
+//
+// Test 17: GetCongestionWindow in STARTUP state
+// Scenario: Tests GetCongestionWindow returns normal congestion window in STARTUP.
+// What: Tests congestion window retrieval in STARTUP state.
+// How: Initialize BBR (starts in STARTUP), call GetCongestionWindow.
+// Assertions: Returns the CongestionWindow value.
+//
+TEST(DeepTest_BbrTest, GetCongestionWindowInStartup)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Should be in STARTUP state
+    ASSERT_EQ(Bbr->BbrState, 0u); // BBR_STATE_STARTUP
+
+    uint32_t cwnd = Connection.CongestionControl.QuicCongestionControlGetCongestionWindow(&Connection.CongestionControl);
+    
+    // Should return the normal congestion window
+    ASSERT_EQ(cwnd, Bbr->CongestionWindow);
+}
+
+//
+// Test 18: GetCongestionWindow in PROBE_RTT state
+// Scenario: Tests GetCongestionWindow returns minimum window (4*DatagramPayloadSize) in PROBE_RTT.
+// What: Tests congestion window retrieval in PROBE_RTT state.
+// How: Set BBR to PROBE_RTT state, call GetCongestionWindow.
+// Assertions: Returns minimum congestion window which is less than normal window.
+//
+TEST(DeepTest_BbrTest, GetCongestionWindowInProbeRtt)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    uint32_t normalCwnd = Bbr->CongestionWindow;
+
+    // Set to PROBE_RTT state (value = 3)
+    Bbr->BbrState = 3; // BBR_STATE_PROBE_RTT
+
+    uint32_t cwnd = Connection.CongestionControl.QuicCongestionControlGetCongestionWindow(&Connection.CongestionControl);
+    
+    // Should return minimum congestion window (much less than normal)
+    ASSERT_LT(cwnd, normalCwnd);
+    ASSERT_GT(cwnd, 0u);
+    // Should be around 4 packets worth (allowing for header overhead)
+    ASSERT_LT(cwnd, 4 * 1280 + 100);
+    ASSERT_GT(cwnd, 4 * 1200);
+}
+
+//
+// Test 19: GetCongestionWindow in recovery
+// Scenario: Tests GetCongestionWindow returns MIN(CongestionWindow, RecoveryWindow) when in recovery.
+// What: Tests congestion window retrieval during recovery.
+// How: Enter recovery state with RecoveryWindow < CongestionWindow, call GetCongestionWindow.
+// Assertions: Returns RecoveryWindow when it's smaller.
+//
+TEST(DeepTest_BbrTest, GetCongestionWindowInRecovery)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Enter recovery state
+    Bbr->RecoveryState = 1; // RECOVERY_STATE_CONSERVATIVE
+    Bbr->RecoveryWindow = 5000; // Smaller than CongestionWindow
+    
+    ASSERT_GT(Bbr->CongestionWindow, Bbr->RecoveryWindow);
+
+    uint32_t cwnd = Connection.CongestionControl.QuicCongestionControlGetCongestionWindow(&Connection.CongestionControl);
+    
+    // Should return the smaller RecoveryWindow
+    ASSERT_EQ(cwnd, Bbr->RecoveryWindow);
+}
+
+//
+// Test 20: GetSendAllowance when congestion blocked
+// Scenario: Tests GetSendAllowance returns 0 when BytesInFlight >= CongestionWindow.
+// What: Tests send allowance when congestion blocked.
+// How: Set BytesInFlight >= CongestionWindow, call GetSendAllowance.
+// Assertions: Returns 0.
+//
+TEST(DeepTest_BbrTest, GetSendAllowanceWhenBlocked)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set BytesInFlight to congestion window
+    Bbr->BytesInFlight = Bbr->CongestionWindow;
+
+    uint32_t allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl, 1000, TRUE);
+    
+    ASSERT_EQ(allowance, 0u);
+}
+
+//
+// Test 21: GetSendAllowance without pacing
+// Scenario: Tests GetSendAllowance returns full available window when pacing disabled.
+// What: Tests send allowance calculation without pacing.
+// How: Disable pacing, set BytesInFlight below window, call GetSendAllowance.
+// Assertions: Returns CongestionWindow - BytesInFlight.
+//
+TEST(DeepTest_BbrTest, GetSendAllowanceWithoutPacing)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Disable pacing
+    Connection.Settings.PacingEnabled = FALSE;
+    Bbr->BytesInFlight = Bbr->CongestionWindow / 2;
+
+    uint32_t expectedAllowance = Bbr->CongestionWindow - Bbr->BytesInFlight;
+
+    uint32_t allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl, 1000, TRUE);
+    
+    ASSERT_EQ(allowance, expectedAllowance);
+}
+
+//
+// Test 22: GetSendAllowance with invalid time
+// Scenario: Tests GetSendAllowance returns full window when TimeSinceLastSendValid=FALSE.
+// What: Tests send allowance skips pacing with invalid time.
+// How: Enable pacing but pass TimeSinceLastSendValid=FALSE.
+// Assertions: Returns CongestionWindow - BytesInFlight (no pacing applied).
+//
+TEST(DeepTest_BbrTest, GetSendAllowanceWithInvalidTime)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Enable pacing
+    Connection.Settings.PacingEnabled = TRUE;
+    Connection.Paths[0].GotFirstRttSample = TRUE;
+    Connection.Paths[0].SmoothedRtt = 50000;
+    Bbr->MinRtt = 50000;
+    Bbr->BytesInFlight = Bbr->CongestionWindow / 2;
+
+    uint32_t expectedAllowance = Bbr->CongestionWindow - Bbr->BytesInFlight;
+
+    // Pass FALSE for TimeSinceLastSendValid
+    uint32_t allowance = Connection.CongestionControl.QuicCongestionControlGetSendAllowance(
+        &Connection.CongestionControl, 1000, FALSE);
+    
+    ASSERT_EQ(allowance, expectedAllowance);
+}
+
+//
+// Test 23: OnSpuriousCongestionEvent
+// Scenario: Tests OnSpuriousCongestionEvent always returns FALSE for BBR.
+// What: Tests spurious congestion event handling.
+// How: Call OnSpuriousCongestionEvent.
+// Assertions: Always returns FALSE (BBR doesn't handle spurious events).
+//
+TEST(DeepTest_BbrTest, OnSpuriousCongestionEvent)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    // Should always return FALSE
+    BOOLEAN result = Connection.CongestionControl.QuicCongestionControlOnSpuriousCongestionEvent(&Connection.CongestionControl);
+    ASSERT_FALSE(result);
+}
+
+//
+// Test 24: GetNetworkStatistics
+// Scenario: Tests GetNetworkStatistics populates all fields correctly.
+// What: Tests network statistics retrieval.
+// How: Set various BBR state values, call GetNetworkStatistics, verify all fields populated.
+// Assertions: NetworkStatistics contains correct BytesInFlight, CongestionWindow, etc.
+//
+TEST(DeepTest_BbrTest, GetNetworkStatistics)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set some state
+    Bbr->BytesInFlight = 5000;
+    Connection.SendBuffer.PostedBytes = 10000;
+    Connection.SendBuffer.IdealBytes = 15000;
+    Connection.Paths[0].SmoothedRtt = 50000;
+
+    QUIC_NETWORK_STATISTICS Stats = {};
+    Connection.CongestionControl.QuicCongestionControlGetNetworkStatistics(
+        &Connection, &Connection.CongestionControl, &Stats);
+
+    // Verify fields populated
+    ASSERT_EQ(Stats.BytesInFlight, 5000u);
+    ASSERT_EQ(Stats.PostedBytes, 10000u);
+    ASSERT_EQ(Stats.IdealBytes, 15000u);
+    ASSERT_EQ(Stats.SmoothedRTT, 50000u);
+    ASSERT_EQ(Stats.CongestionWindow, Bbr->CongestionWindow);
+}
+
+
+//
+// Test 25: OnDataLost enters recovery
+// Scenario: Tests OnDataLost enters CONSERVATIVE recovery state and sets EndOfRecovery.
+// What: Tests packet loss handling and recovery entry.
+// How: Create loss event, call OnDataLost, verify recovery state entered.
+// Assertions: RecoveryState=CONSERVATIVE, EndOfRecoveryValid=TRUE, BytesInFlight decreased.
+//
+TEST(DeepTest_BbrTest, OnDataLostEntersRecovery)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send some data first
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
+    ASSERT_EQ(Bbr->BytesInFlight, 10000u);
+    ASSERT_EQ(Bbr->RecoveryState, 0u); // NOT_RECOVERY
+
+    // Create loss event
+    QUIC_LOSS_EVENT LossEvent = {};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    LossEvent.NumRetransmittableBytes = 2000;
+    LossEvent.PersistentCongestion = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+
+    // Should enter recovery
+    ASSERT_EQ(Bbr->RecoveryState, 1u); // RECOVERY_STATE_CONSERVATIVE
+    ASSERT_TRUE(Bbr->EndOfRecoveryValid);
+    ASSERT_EQ(Bbr->EndOfRecovery, 10u);
+    
+    // BytesInFlight should decrease
+    ASSERT_EQ(Bbr->BytesInFlight, 8000u);
+    
+    // RecoveryWindow should be set
+    ASSERT_GT(Bbr->RecoveryWindow, 0u);
+}
+
+//
+// Test 26: OnDataLost with persistent congestion
+// Scenario: Tests OnDataLost sets RecoveryWindow to minimum on persistent congestion.
+// What: Tests persistent congestion handling.
+// How: Create loss event with PersistentCongestion=TRUE, call OnDataLost.
+// Assertions: RecoveryWindow set to minimum (around 4 * DatagramPayloadSize).
+//
+TEST(DeepTest_BbrTest, OnDataLostWithPersistentCongestion)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    uint32_t oldRecoveryWindow = Bbr->RecoveryWindow;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
+
+    // Create persistent congestion loss event
+    QUIC_LOSS_EVENT LossEvent = {};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    LossEvent.NumRetransmittableBytes = 2000;
+    LossEvent.PersistentCongestion = TRUE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+
+    // RecoveryWindow should be minimum (around 4 packets, accounting for overhead)
+    ASSERT_LT(Bbr->RecoveryWindow, oldRecoveryWindow);
+    ASSERT_GT(Bbr->RecoveryWindow, 0u);
+    ASSERT_LT(Bbr->RecoveryWindow, 6000u); // Less than old window
+    ASSERT_GT(Bbr->RecoveryWindow, 4000u); // Around 4 packets minimum
+}
+
+//
+// Test 27: OnDataLost during existing recovery
+// Scenario: Tests OnDataLost behavior when already in recovery.
+// What: Tests loss handling during recovery.
+// How: Enter recovery, then trigger another loss, verify state remains CONSERVATIVE.
+// Assertions: Stays in recovery, RecoveryWindow updated.
+//
+TEST(DeepTest_BbrTest, OnDataLostDuringRecovery)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send data and enter recovery
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
+    
+    QUIC_LOSS_EVENT LossEvent1 = {};
+    LossEvent1.LargestPacketNumberLost = 5;
+    LossEvent1.LargestSentPacketNumber = 10;
+    LossEvent1.NumRetransmittableBytes = 2000;
+    LossEvent1.PersistentCongestion = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent1);
+    ASSERT_EQ(Bbr->RecoveryState, 1u); // CONSERVATIVE
+
+    uint32_t oldRecoveryWindow = Bbr->RecoveryWindow;
+
+    // Lose more data during recovery
+    QUIC_LOSS_EVENT LossEvent2 = {};
+    LossEvent2.LargestPacketNumberLost = 8;
+    LossEvent2.LargestSentPacketNumber = 15;
+    LossEvent2.NumRetransmittableBytes = 1000;
+    LossEvent2.PersistentCongestion = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent2);
+    
+    // Should still be in recovery
+    ASSERT_EQ(Bbr->RecoveryState, 1u); // CONSERVATIVE
+    
+    // RecoveryWindow should be reduced
+    ASSERT_LT(Bbr->RecoveryWindow, oldRecoveryWindow);
+}
+
+//
+// Test 28: OnDataAcknowledged with implicit ACK
+// Scenario: Tests OnDataAcknowledged handles implicit ACKs by only updating congestion window.
+// What: Tests implicit ACK handling (no packet metadata).
+// How: Create ACK event with IsImplicit=TRUE, call OnDataAcknowledged.
+// Assertions: CongestionWindow updated, but minimal BBR logic executed.
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedWithImplicitAck)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 5000);
+    ASSERT_EQ(Bbr->BytesInFlight, 5000u);
+
+    uint32_t oldCongestionWindow = Bbr->CongestionWindow;
+
+    // Create implicit ACK event
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = TRUE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Congestion window should be updated (grown in STARTUP)
+    ASSERT_GE(Bbr->CongestionWindow, oldCongestionWindow);
+}
+
+//
+// Test 29: OnDataAcknowledged updates MinRtt
+// Scenario: Tests OnDataAcknowledged updates MinRtt when new sample available.
+// What: Tests MinRtt tracking.
+// How: Create ACK event with MinRttValid=TRUE and new MinRtt, call OnDataAcknowledged.
+// Assertions: MinRtt updated to new value, MinRttTimestampValid=TRUE.
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedUpdatesMinRtt)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    // Create ACK event with MinRtt
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 2000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000; // 50ms
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // MinRtt should be updated
+    ASSERT_EQ(Bbr->MinRtt, 50000u);
+    ASSERT_TRUE(Bbr->MinRttTimestampValid);
+    ASSERT_EQ(Bbr->MinRttTimestamp, 2000000u);
+}
+
+//
+// Test 30: OnDataAcknowledged starts new round trip
+// Scenario: Tests OnDataAcknowledged increments RoundTripCounter on new round trip.
+// What: Tests round trip detection.
+// How: ACK packet beyond EndOfRoundTrip, verify RoundTripCounter increments.
+// Assertions: RoundTripCounter increases, EndOfRoundTrip updated.
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedStartsNewRoundTrip)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    ASSERT_EQ(Bbr->RoundTripCounter, 0u);
+    ASSERT_FALSE(Bbr->EndOfRoundTripValid);
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+
+    // Create ACK event
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should start first round trip
+    ASSERT_EQ(Bbr->RoundTripCounter, 1u);
+    ASSERT_TRUE(Bbr->EndOfRoundTripValid);
+    ASSERT_EQ(Bbr->EndOfRoundTrip, 10u);
+}
+
+//
+// Test 31: OnDataAcknowledged exits recovery
+// Scenario: Tests OnDataAcknowledged exits recovery when EndOfRecovery packet is acked without loss.
+// What: Tests recovery exit.
+// How: Enter recovery, ACK packet beyond EndOfRecovery without loss, verify exit.
+// Assertions: RecoveryState returns to NOT_RECOVERY.
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedExitsRecovery)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Enter recovery
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 10000);
+    
+    QUIC_LOSS_EVENT LossEvent = {};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    LossEvent.NumRetransmittableBytes = 2000;
+    LossEvent.PersistentCongestion = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(&Connection.CongestionControl, &LossEvent);
+    ASSERT_EQ(Bbr->RecoveryState, 1u); // CONSERVATIVE
+    ASSERT_EQ(Bbr->EndOfRecovery, 10u);
+
+    // Send more data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 2000);
+
+    // ACK packet beyond EndOfRecovery without loss
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 2000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 4000;
+    AckEvent.TimeNow = 2000000;
+    AckEvent.LargestAck = 15; // Beyond EndOfRecovery (10)
+    AckEvent.LargestSentPacketNumber = 15;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE; // No loss
+    AckEvent.AckedPackets = NULL;
+
+    // First ACK - should transition to GROWTH
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+    // Second ACK - should exit recovery
+    AckEvent.LargestAck = 20;
+    AckEvent.LargestSentPacketNumber = 20;
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should exit recovery
+    ASSERT_EQ(Bbr->RecoveryState, 0u); // NOT_RECOVERY
+}
+
+//
+// Test 32: OnDataAcknowledged transitions STARTUP to DRAIN
+// Scenario: Tests OnDataAcknowledged transitions from STARTUP to DRAIN when BtlbwFound.
+// What: Tests STARTUP → DRAIN transition.
+// How: In STARTUP with BtlbwFound=TRUE and high BytesInFlight, call OnDataAcknowledged, verify transition to DRAIN.
+// Assertions: BbrState transitions to DRAIN (1) when in STARTUP and BtlbwFound is TRUE.
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedTransitionsStartupToDrain)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    ASSERT_EQ(Bbr->BbrState, 0u); // STARTUP
+
+    // Send lots of data to keep BytesInFlight high (prevent immediate transition to PROBE_BW)
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 20000);
+
+    // Mark bottleneck bandwidth found and prevent transition to PROBE_RTT
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->MinRttTimestamp = 1000000;
+    Bbr->MinRtt = 50000;
+    Bbr->RttSampleExpired = FALSE; // Prevent PROBE_RTT transition
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Create ACK event for small amount of data (BytesInFlight stays high)
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 500; // Ack small amount
+    AckEvent.NumTotalAckedRetransmittableBytes = 500;
+    AckEvent.TimeNow = 1050000; // Soon after MinRtt, so not expired
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should transition to DRAIN (and stay there because BytesInFlight is still high)
+    ASSERT_EQ(Bbr->BbrState, 1u); // BBR_STATE_DRAIN
+}
+
+//
+// Test 33: OnDataAcknowledged transitions DRAIN to PROBE_BW
+// Scenario: Tests OnDataAcknowledged transitions from DRAIN to PROBE_BW when drained.
+// What: Tests DRAIN → PROBE_BW transition.
+// How: Set DRAIN state with low BytesInFlight, call OnDataAcknowledged.
+// Assertions: BbrState transitions to PROBE_BW (2).
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedTransitionsDrainToProbeBw)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set to DRAIN state
+    Bbr->BbrState = 1; // BBR_STATE_DRAIN
+    Bbr->BtlbwFound = TRUE;
+
+    // Set low BytesInFlight (drain condition met)
+    Bbr->BytesInFlight = 100; // Much less than target
+
+    // Create ACK event
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 100;
+    AckEvent.NumTotalAckedRetransmittableBytes = 100;
+    AckEvent.TimeNow = 1000000;
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.MinRtt = 50000;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should transition to PROBE_BW
+    ASSERT_EQ(Bbr->BbrState, 2u); // BBR_STATE_PROBE_BW
+}
+
+//
+// Test 34: OnDataAcknowledged transitions to PROBE_RTT
+// Scenario: Tests OnDataAcknowledged transitions to PROBE_RTT when MinRtt expires.
+// What: Tests transition to PROBE_RTT for RTT measurement.
+// How: Set expired MinRtt, call OnDataAcknowledged.
+// Assertions: BbrState transitions to PROBE_RTT (3).
+//
+TEST(DeepTest_BbrTest, OnDataAcknowledgedTransitionsToProbeRtt)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;
+
+    // Set to PROBE_BW state
+    Bbr->BbrState = 2; // BBR_STATE_PROBE_BW
+    Bbr->BtlbwFound = TRUE;
+    Bbr->MinRtt = 50000;
+    Bbr->MinRttTimestamp = 100000;
+    Bbr->MinRttTimestampValid = TRUE;
+    Bbr->ExitingQuiescence = FALSE;
+
+    // Send data
+    Connection.CongestionControl.QuicCongestionControlOnDataSent(&Connection.CongestionControl, 1000);
+    Connection.LossDetection.LargestSentPacketNumber = 10;
+
+    // Create ACK event with expired MinRtt
+    QUIC_ACK_EVENT AckEvent = {};
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.NumRetransmittableBytes = 1000;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1000;
+    AckEvent.TimeNow = Bbr->MinRttTimestamp + 11000000; // > 10 seconds expired
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.AckedPackets = NULL;
+
+    // Mark MinRtt as expired
+    Bbr->RttSampleExpired = TRUE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(&Connection.CongestionControl, &AckEvent);
+
+    // Should transition to PROBE_RTT
+    ASSERT_EQ(Bbr->BbrState, 3u); // BBR_STATE_PROBE_RTT
+}
+
