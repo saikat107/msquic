@@ -1,0 +1,634 @@
+{
+  "test_file": "/home/runner/work/msquic/msquic/src/core/unittest/BbrTest.cpp",
+  "test_name": "InitializeComprehensive",
+  "language": "cpp",
+  "start_line": 52,
+  "end_line": 126,
+  "line_count": 75,
+  "lines": [
+    {
+      "number": 52,
+      "content": "TEST(DeepTest_BbrTest, InitializeComprehensive)"
+    },
+    {
+      "number": 53,
+      "content": "{"
+    },
+    {
+      "number": 54,
+      "content": "    QUIC_CONNECTION Connection;"
+    },
+    {
+      "number": 55,
+      "content": "    QUIC_SETTINGS_INTERNAL Settings{};"
+    },
+    {
+      "number": 56,
+      "content": ""
+    },
+    {
+      "number": 57,
+      "content": "    Settings.InitialWindowPackets = 10;"
+    },
+    {
+      "number": 58,
+      "content": "    Settings.SendIdleTimeoutMs = 1000;"
+    },
+    {
+      "number": 59,
+      "content": ""
+    },
+    {
+      "number": 60,
+      "content": "    InitializeMockConnection(Connection, 1280);"
+    },
+    {
+      "number": 61,
+      "content": ""
+    },
+    {
+      "number": 62,
+      "content": "    // Pre-set some fields to verify they get initialized"
+    },
+    {
+      "number": 63,
+      "content": "    Connection.CongestionControl.Bbr.BytesInFlight = 12345;"
+    },
+    {
+      "number": 64,
+      "content": "    Connection.CongestionControl.Bbr.Exemptions = 5;"
+    },
+    {
+      "number": 65,
+      "content": ""
+    },
+    {
+      "number": 66,
+      "content": "    BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);"
+    },
+    {
+      "number": 67,
+      "content": ""
+    },
+    {
+      "number": 68,
+      "content": "    QUIC_CONGESTION_CONTROL_BBR *Bbr = &Connection.CongestionControl.Bbr;"
+    },
+    {
+      "number": 69,
+      "content": ""
+    },
+    {
+      "number": 70,
+      "content": "    // Verify settings stored correctly"
+    },
+    {
+      "number": 71,
+      "content": "    ASSERT_EQ(Bbr->InitialCongestionWindowPackets, 10u);"
+    },
+    {
+      "number": 72,
+      "content": ""
+    },
+    {
+      "number": 73,
+      "content": "    // Verify congestion window initialized"
+    },
+    {
+      "number": 74,
+      "content": "    ASSERT_GT(Bbr->CongestionWindow, 0u);"
+    },
+    {
+      "number": 75,
+      "content": "    ASSERT_EQ(Bbr->BytesInFlightMax, Bbr->CongestionWindow / 2);"
+    },
+    {
+      "number": 76,
+      "content": ""
+    },
+    {
+      "number": 77,
+      "content": "    // Verify all 17 function pointers are set"
+    },
+    {
+      "number": 78,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlCanSend, nullptr);"
+    },
+    {
+      "number": 79,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlSetExemption, nullptr);"
+    },
+    {
+      "number": 80,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlReset, nullptr);"
+    },
+    {
+      "number": 81,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetSendAllowance, nullptr);"
+    },
+    {
+      "number": 82,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataSent, nullptr);"
+    },
+    {
+      "number": 83,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataInvalidated, nullptr);"
+    },
+    {
+      "number": 84,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged, nullptr);"
+    },
+    {
+      "number": 85,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataLost, nullptr);"
+    },
+    {
+      "number": 86,
+      "content": "    ASSERT_EQ(Connection.CongestionControl.QuicCongestionControlOnEcn, nullptr);  // BBR doesn't implement ECN"
+    },
+    {
+      "number": 87,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnSpuriousCongestionEvent, nullptr);"
+    },
+    {
+      "number": 88,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlLogOutFlowStatus, nullptr);"
+    },
+    {
+      "number": 89,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetExemptions, nullptr);"
+    },
+    {
+      "number": 90,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetBytesInFlightMax, nullptr);"
+    },
+    {
+      "number": 91,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlIsAppLimited, nullptr);"
+    },
+    {
+      "number": 92,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlSetAppLimited, nullptr);"
+    },
+    {
+      "number": 93,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetCongestionWindow, nullptr);"
+    },
+    {
+      "number": 94,
+      "content": "    ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetNetworkStatistics, nullptr);"
+    },
+    {
+      "number": 95,
+      "content": ""
+    },
+    {
+      "number": 96,
+      "content": "    // Verify boolean state flags"
+    },
+    {
+      "number": 97,
+      "content": "    ASSERT_FALSE(Bbr->BtlbwFound);"
+    },
+    {
+      "number": 98,
+      "content": "    ASSERT_FALSE(Bbr->ExitingQuiescence);"
+    },
+    {
+      "number": 99,
+      "content": "    ASSERT_FALSE(Bbr->EndOfRecoveryValid);"
+    },
+    {
+      "number": 100,
+      "content": "    ASSERT_FALSE(Bbr->EndOfRoundTripValid);"
+    },
+    {
+      "number": 101,
+      "content": "    ASSERT_FALSE(Bbr->AckAggregationStartTimeValid);"
+    },
+    {
+      "number": 102,
+      "content": "    ASSERT_FALSE(Bbr->ProbeRttRoundValid);"
+    },
+    {
+      "number": 103,
+      "content": "    ASSERT_FALSE(Bbr->ProbeRttEndTimeValid);"
+    },
+    {
+      "number": 104,
+      "content": "    ASSERT_TRUE(Bbr->RttSampleExpired);"
+    },
+    {
+      "number": 105,
+      "content": "    ASSERT_FALSE(Bbr->MinRttTimestampValid);"
+    },
+    {
+      "number": 106,
+      "content": ""
+    },
+    {
+      "number": 107,
+      "content": "    // Verify BBR state machine initial state"
+    },
+    {
+      "number": 108,
+      "content": "    ASSERT_EQ(Bbr->BbrState, 0u); // BBR_STATE_STARTUP"
+    },
+    {
+      "number": 109,
+      "content": "    ASSERT_EQ(Bbr->RecoveryState, 0u); // RECOVERY_STATE_NOT_RECOVERY"
+    },
+    {
+      "number": 110,
+      "content": ""
+    },
+    {
+      "number": 111,
+      "content": "    // Verify counters initialized"
+    },
+    {
+      "number": 112,
+      "content": "    ASSERT_EQ(Bbr->BytesInFlight, 0u);"
+    },
+    {
+      "number": 113,
+      "content": "    ASSERT_EQ(Bbr->Exemptions, 0u);"
+    },
+    {
+      "number": 114,
+      "content": "    ASSERT_EQ(Bbr->RoundTripCounter, 0u);"
+    },
+    {
+      "number": 115,
+      "content": "    ASSERT_EQ(Bbr->SlowStartupRoundCounter, 0u);"
+    },
+    {
+      "number": 116,
+      "content": "    ASSERT_EQ(Bbr->PacingCycleIndex, 0u);"
+    },
+    {
+      "number": 117,
+      "content": "    ASSERT_EQ(Bbr->AggregatedAckBytes, 0u);"
+    },
+    {
+      "number": 118,
+      "content": "    ASSERT_EQ(Bbr->LastEstimatedStartupBandwidth, 0u);"
+    },
+    {
+      "number": 119,
+      "content": ""
+    },
+    {
+      "number": 120,
+      "content": "    // Verify MinRtt initialized"
+    },
+    {
+      "number": 121,
+      "content": "    ASSERT_EQ(Bbr->MinRtt, UINT64_MAX);"
+    },
+    {
+      "number": 122,
+      "content": ""
+    },
+    {
+      "number": 123,
+      "content": "    // Verify bandwidth filter initialized"
+    },
+    {
+      "number": 124,
+      "content": "    ASSERT_FALSE(Bbr->BandwidthFilter.AppLimited);"
+    },
+    {
+      "number": 125,
+      "content": "    ASSERT_EQ(Bbr->BandwidthFilter.AppLimitedExitTarget, 0u);"
+    },
+    {
+      "number": 126,
+      "content": "}"
+    }
+  ],
+  "patterns": {
+    "numbers_found": [
+      {
+        "line": 57,
+        "value": "10",
+        "context": "Settings.InitialWindowPackets = 10;"
+      },
+      {
+        "line": 58,
+        "value": "1000",
+        "context": "Settings.SendIdleTimeoutMs = 1000;"
+      },
+      {
+        "line": 60,
+        "value": "1280",
+        "context": "InitializeMockConnection(Connection, 1280);"
+      },
+      {
+        "line": 63,
+        "value": "12345",
+        "context": "Connection.CongestionControl.Bbr.BytesInFlight = 12345;"
+      },
+      {
+        "line": 64,
+        "value": "5",
+        "context": "Connection.CongestionControl.Bbr.Exemptions = 5;"
+      },
+      {
+        "line": 75,
+        "value": "2",
+        "context": "ASSERT_EQ(Bbr->BytesInFlightMax, Bbr->CongestionWindow / 2);"
+      }
+    ],
+    "function_calls": [
+      {
+        "line": 52,
+        "name": "TEST",
+        "context": "TEST(DeepTest_BbrTest, InitializeComprehensive)"
+      },
+      {
+        "line": 60,
+        "name": "InitializeMockConnection",
+        "context": "InitializeMockConnection(Connection, 1280);"
+      },
+      {
+        "line": 66,
+        "name": "BbrCongestionControlInitialize",
+        "context": "BbrCongestionControlInitialize(&Connection.CongestionControl, &Settings);"
+      },
+      {
+        "line": 71,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->InitialCongestionWindowPackets, 10u);"
+      },
+      {
+        "line": 74,
+        "name": "ASSERT_GT",
+        "context": "ASSERT_GT(Bbr->CongestionWindow, 0u);"
+      },
+      {
+        "line": 75,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->BytesInFlightMax, Bbr->CongestionWindow / 2);"
+      },
+      {
+        "line": 78,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlCanSend, nullptr);"
+      },
+      {
+        "line": 79,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlSetExemption, nullptr);"
+      },
+      {
+        "line": 80,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlReset, nullptr);"
+      },
+      {
+        "line": 81,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetSendAllowance, nullptr);"
+      },
+      {
+        "line": 82,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataSent, nullptr);"
+      },
+      {
+        "line": 83,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataInvalidated, nullptr);"
+      },
+      {
+        "line": 84,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged, nullptr);"
+      },
+      {
+        "line": 85,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnDataLost, nullptr);"
+      },
+      {
+        "line": 86,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Connection.CongestionControl.QuicCongestionControlOnEcn, nullptr);  // BBR doesn't implement ECN"
+      },
+      {
+        "line": 87,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlOnSpuriousCongestionEvent, nullptr);"
+      },
+      {
+        "line": 88,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlLogOutFlowStatus, nullptr);"
+      },
+      {
+        "line": 89,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetExemptions, nullptr);"
+      },
+      {
+        "line": 90,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetBytesInFlightMax, nullptr);"
+      },
+      {
+        "line": 91,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlIsAppLimited, nullptr);"
+      },
+      {
+        "line": 92,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlSetAppLimited, nullptr);"
+      },
+      {
+        "line": 93,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetCongestionWindow, nullptr);"
+      },
+      {
+        "line": 94,
+        "name": "ASSERT_NE",
+        "context": "ASSERT_NE(Connection.CongestionControl.QuicCongestionControlGetNetworkStatistics, nullptr);"
+      },
+      {
+        "line": 97,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->BtlbwFound);"
+      },
+      {
+        "line": 98,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->ExitingQuiescence);"
+      },
+      {
+        "line": 99,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->EndOfRecoveryValid);"
+      },
+      {
+        "line": 100,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->EndOfRoundTripValid);"
+      },
+      {
+        "line": 101,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->AckAggregationStartTimeValid);"
+      },
+      {
+        "line": 102,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->ProbeRttRoundValid);"
+      },
+      {
+        "line": 103,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->ProbeRttEndTimeValid);"
+      },
+      {
+        "line": 104,
+        "name": "ASSERT_TRUE",
+        "context": "ASSERT_TRUE(Bbr->RttSampleExpired);"
+      },
+      {
+        "line": 105,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->MinRttTimestampValid);"
+      },
+      {
+        "line": 108,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->BbrState, 0u); // BBR_STATE_STARTUP"
+      },
+      {
+        "line": 109,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->RecoveryState, 0u); // RECOVERY_STATE_NOT_RECOVERY"
+      },
+      {
+        "line": 112,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->BytesInFlight, 0u);"
+      },
+      {
+        "line": 113,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->Exemptions, 0u);"
+      },
+      {
+        "line": 114,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->RoundTripCounter, 0u);"
+      },
+      {
+        "line": 115,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->SlowStartupRoundCounter, 0u);"
+      },
+      {
+        "line": 116,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->PacingCycleIndex, 0u);"
+      },
+      {
+        "line": 117,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->AggregatedAckBytes, 0u);"
+      },
+      {
+        "line": 118,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->LastEstimatedStartupBandwidth, 0u);"
+      },
+      {
+        "line": 121,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->MinRtt, UINT64_MAX);"
+      },
+      {
+        "line": 124,
+        "name": "ASSERT_FALSE",
+        "context": "ASSERT_FALSE(Bbr->BandwidthFilter.AppLimited);"
+      },
+      {
+        "line": 125,
+        "name": "ASSERT_EQ",
+        "context": "ASSERT_EQ(Bbr->BandwidthFilter.AppLimitedExitTarget, 0u);"
+      }
+    ],
+    "keywords_found": []
+  },
+  "comments": {
+    "description_comment": {
+      "lines": [
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51
+      ],
+      "text": " Test 1: Comprehensive initialization verification Scenario: Verifies BbrCongestionControlInitialize correctly sets up all BBR state including settings, function pointers, state flags, and zero-initialized fields. What: Tests the initialization of the BBR congestion control state machine. How: Calls BbrCongestionControlInitialize with valid connection and settings, then inspects all state. Assertions: All function pointers set, BBR state is STARTUP, initial window set correctly, all boolean flags initialized, bandwidth and ack filters initialized. "
+    },
+    "inline_comments": [
+      {
+        "line": 62,
+        "content": "Pre-set some fields to verify they get initialized"
+      },
+      {
+        "line": 70,
+        "content": "Verify settings stored correctly"
+      },
+      {
+        "line": 73,
+        "content": "Verify congestion window initialized"
+      },
+      {
+        "line": 77,
+        "content": "Verify all 17 function pointers are set"
+      },
+      {
+        "line": 86,
+        "content": "BBR doesn't implement ECN"
+      },
+      {
+        "line": 96,
+        "content": "Verify boolean state flags"
+      },
+      {
+        "line": 107,
+        "content": "Verify BBR state machine initial state"
+      },
+      {
+        "line": 108,
+        "content": "BBR_STATE_STARTUP"
+      },
+      {
+        "line": 109,
+        "content": "RECOVERY_STATE_NOT_RECOVERY"
+      },
+      {
+        "line": 111,
+        "content": "Verify counters initialized"
+      },
+      {
+        "line": 120,
+        "content": "Verify MinRtt initialized"
+      },
+      {
+        "line": 123,
+        "content": "Verify bandwidth filter initialized"
+      }
+    ],
+    "block_comments": []
+  }
+}
