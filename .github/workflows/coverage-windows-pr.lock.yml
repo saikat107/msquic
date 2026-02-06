@@ -146,10 +146,20 @@ jobs:
       output: ${{ steps.collect_output.outputs.output }}
       output_types: ${{ steps.collect_output.outputs.output_types }}
     steps:
-      - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.40.1
+      - name: Checkout gh-aw actions folder
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
-          destination: /opt/gh-aw/actions
+          repository: github/gh-aw
+          sparse-checkout: |
+            actions
+          path: gh-aw-actions-source
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Setup Scripts
+        shell: bash
+        env:
+          INPUT_DESTINATION: /opt/gh-aw/actions
+        run: bash gh-aw-actions-source/actions/setup/setup.sh
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
