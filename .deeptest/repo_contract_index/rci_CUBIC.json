@@ -1,0 +1,203 @@
+{
+  "component": "QUIC_CONGESTION_CONTROL_CUBIC",
+  "source_file": "src/core/cubic.c",
+  "header_file": "src/core/cubic.h",
+  "description": "CUBIC congestion control implementation for MsQuic (RFC 8312bis)",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "signature": "void CubicCongestionControlInitialize(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_SETTINGS_INTERNAL* Settings)",
+      "line_range": [915, 940],
+      "preconditions": ["Cc not NULL", "Settings not NULL", "Connection.Paths[0] valid"],
+      "postconditions": ["All function pointers set", "CongestionWindow initialized", "State flags cleared"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlCanSend",
+      "signature": "BOOLEAN CubicCongestionControlCanSend(_In_ QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [128, 135],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Returns TRUE if can send, FALSE otherwise"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlSetExemption",
+      "signature": "void CubicCongestionControlSetExemption(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint8_t NumPackets)",
+      "line_range": [138, 145],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Exemptions = NumPackets"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlReset",
+      "signature": "void CubicCongestionControlReset(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ BOOLEAN FullReset)",
+      "line_range": [148, 175],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["State reset to initial", "BytesInFlight zeroed if FullReset"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlGetSendAllowance",
+      "signature": "uint32_t CubicCongestionControlGetSendAllowance(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint64_t TimeSinceLastSend, _In_ BOOLEAN TimeSinceLastSendValid)",
+      "line_range": [178, 242],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Returns bytes allowed to send", "May update LastSendAllowance"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnDataSent",
+      "signature": "void CubicCongestionControlOnDataSent(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint32_t NumRetransmittableBytes)",
+      "line_range": [371, 398],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["BytesInFlight increased", "Exemptions decremented if > 0"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnDataInvalidated",
+      "signature": "BOOLEAN CubicCongestionControlOnDataInvalidated(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint32_t NumRetransmittableBytes)",
+      "line_range": [401, 415],
+      "preconditions": ["Cc not NULL", "NumRetransmittableBytes <= BytesInFlight"],
+      "postconditions": ["BytesInFlight decreased", "Returns TRUE if unblocked"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnDataAcknowledged",
+      "signature": "BOOLEAN CubicCongestionControlOnDataAcknowledged(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_ACK_EVENT* AckEvent)",
+      "line_range": [437, 717],
+      "preconditions": ["Cc not NULL", "AckEvent not NULL", "AckEvent.NumRetransmittableBytes <= BytesInFlight"],
+      "postconditions": ["BytesInFlight decreased", "Window may grow", "May exit recovery", "Returns TRUE if unblocked"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnDataLost",
+      "signature": "void CubicCongestionControlOnDataLost(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_LOSS_EVENT* LossEvent)",
+      "line_range": [720, 752],
+      "preconditions": ["Cc not NULL", "LossEvent not NULL", "LossEvent.NumRetransmittableBytes <= BytesInFlight"],
+      "postconditions": ["BytesInFlight decreased", "May enter recovery", "Window may reduce"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnCongestionEvent",
+      "signature": "void CubicCongestionControlOnCongestionEvent(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ BOOLEAN IsPersistentCongestion, _In_ BOOLEAN Ecn)",
+      "line_range": [271, 368],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Window reduced", "Recovery state entered", "KCubic computed"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnEcn",
+      "signature": "void CubicCongestionControlOnEcn(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_ECN_EVENT* EcnEvent)",
+      "line_range": [755, 784],
+      "preconditions": ["Cc not NULL", "EcnEvent not NULL"],
+      "postconditions": ["May enter recovery", "Window may reduce"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlOnSpuriousCongestionEvent",
+      "signature": "BOOLEAN CubicCongestionControlOnSpuriousCongestionEvent(_In_ QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [787, 823],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Window restored if in recovery", "Returns TRUE if unblocked"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlGetNetworkStatistics",
+      "signature": "void CubicCongestionControlGetNetworkStatistics(_In_ const QUIC_CONNECTION* const Connection, _In_ const QUIC_CONGESTION_CONTROL* const Cc, _Out_ QUIC_NETWORK_STATISTICS* NetworkStatistics)",
+      "line_range": [418, 434],
+      "preconditions": ["Connection not NULL", "Cc not NULL", "NetworkStatistics not NULL"],
+      "postconditions": ["NetworkStatistics populated"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlLogOutFlowStatus",
+      "signature": "void CubicCongestionControlLogOutFlowStatus(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [825, 846],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Telemetry logged"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlGetBytesInFlightMax",
+      "signature": "uint32_t CubicCongestionControlGetBytesInFlightMax(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [848, 854],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Returns BytesInFlightMax"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlGetExemptions",
+      "signature": "uint8_t CubicCongestionControlGetExemptions(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [857, 863],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Returns Exemptions"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlGetCongestionWindow",
+      "signature": "uint32_t CubicCongestionControlGetCongestionWindow(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [865, 871],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Returns CongestionWindow"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlIsAppLimited",
+      "signature": "BOOLEAN CubicCongestionControlIsAppLimited(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [874, 881],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["Always returns FALSE"],
+      "can_fail": false
+    },
+    {
+      "name": "CubicCongestionControlSetAppLimited",
+      "signature": "void CubicCongestionControlSetAppLimited(_In_ struct QUIC_CONGESTION_CONTROL* Cc)",
+      "line_range": [884, 890],
+      "preconditions": ["Cc not NULL"],
+      "postconditions": ["No-op"],
+      "can_fail": false
+    },
+    {
+      "name": "CubeRoot",
+      "signature": "uint32_t CubeRoot(uint32_t Radicand)",
+      "line_range": [44, 62],
+      "preconditions": ["None"],
+      "postconditions": ["Returns integer cube root"],
+      "can_fail": false,
+      "note": "Internal function exercised by OnCongestionEvent"
+    }
+  ],
+  "state_machines": {
+    "recovery_states": {
+      "states": ["Normal", "Recovery", "PersistentCongestion"],
+      "transitions": [
+        {"from": "Normal", "to": "Recovery", "trigger": "OnDataLost/OnEcn (new loss)"},
+        {"from": "Recovery", "to": "PersistentCongestion", "trigger": "OnDataLost (persistent detected)"},
+        {"from": "Recovery", "to": "Normal", "trigger": "OnDataAcknowledged (ACK > RecoverySentPacketNumber)"},
+        {"from": "PersistentCongestion", "to": "Normal", "trigger": "OnDataAcknowledged (ACK > RecoverySentPacketNumber)"},
+        {"from": "Recovery", "to": "Normal", "trigger": "OnSpuriousCongestionEvent"},
+        {"from": "Any", "to": "Normal", "trigger": "Reset"}
+      ]
+    },
+    "hystart_states": {
+      "states": ["HYSTART_NOT_STARTED", "HYSTART_ACTIVE", "HYSTART_DONE"],
+      "transitions": [
+        {"from": "HYSTART_NOT_STARTED", "to": "HYSTART_ACTIVE", "trigger": "MinRtt increase >= Eta"},
+        {"from": "HYSTART_ACTIVE", "to": "HYSTART_DONE", "trigger": "CSS rounds exhausted"},
+        {"from": "HYSTART_ACTIVE", "to": "HYSTART_NOT_STARTED", "trigger": "MinRtt decreased"},
+        {"from": "Any", "to": "HYSTART_DONE", "trigger": "Congestion event"},
+        {"from": "Any", "to": "HYSTART_NOT_STARTED", "trigger": "Reset"}
+      ]
+    }
+  },
+  "constants": {
+    "TEN_TIMES_BETA_CUBIC": 7,
+    "TEN_TIMES_C_CUBIC": 4,
+    "QUIC_MIN_PACING_RTT": 1000,
+    "QUIC_HYSTART_DEFAULT_N_SAMPLING": 8,
+    "QUIC_HYSTART_DEFAULT_MIN_ETA": 4000,
+    "QUIC_HYSTART_DEFAULT_MAX_ETA": 16000,
+    "QUIC_CONSERVATIVE_SLOW_START_DEFAULT_ROUNDS": 5,
+    "QUIC_CONSERVATIVE_SLOW_START_DEFAULT_GROWTH_DIVISOR": 4,
+    "QUIC_PERSISTENT_CONGESTION_WINDOW_PACKETS": 2
+  }
+}
