@@ -185,17 +185,28 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = Join-Path $env:GITHUB_WORKSPACE 'gh-aw-actions-source\actions'
-          if (-not (Test-Path $source)) {
-            throw "Missing gh-aw actions source at $source"
+          # Node on Windows resolves '/opt/gh-aw/actions/...' to '<current-drive>:\opt\gh-aw\actions\...'.
+          # Git-Bash resolves '/opt/gh-aw/actions' inside its MSYS root, so use cygpath to find
+          # the real Windows path of that directory, then copy it to drive-root \opt.
+
+          $bash = (Get-Command bash -ErrorAction Stop).Source
+          $optActionsWinPath = & $bash -lc 'set -euo pipefail; cygpath -w /opt/gh-aw/actions'
+          $optActionsWinPath = ($optActionsWinPath | Select-Object -First 1).Trim()
+          if ([string]::IsNullOrWhiteSpace($optActionsWinPath)) {
+            throw 'Unable to resolve Windows path for /opt/gh-aw/actions via cygpath'
+          }
+
+          $setupGlobals = Join-Path $optActionsWinPath 'setup_globals.cjs'
+          if (-not (Test-Path $setupGlobals)) {
+            throw "Expected gh-aw action scripts not found at $optActionsWinPath (missing setup_globals.cjs)"
           }
 
           foreach ($drive in @('C:', 'D:')) {
             if (-not (Test-Path ($drive + '\\'))) { continue }
             $dest = Join-Path $drive 'opt\gh-aw\actions'
             New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            Copy-Item -Path (Join-Path $source '*') -Destination $dest -Recurse -Force
-            Write-Host "Copied gh-aw actions to $dest"
+            Copy-Item -Path (Join-Path $optActionsWinPath '*') -Destination $dest -Recurse -Force
+            Write-Host "Copied installed gh-aw action scripts from $optActionsWinPath to $dest"
           }
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6

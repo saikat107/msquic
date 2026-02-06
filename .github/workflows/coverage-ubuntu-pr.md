@@ -202,7 +202,7 @@ engine:
       run: |
         set -euo pipefail
         sudo apt-get update
-        sudo apt-get install -y python3-pip gcov jq
+        sudo apt-get install -y python3-pip gcc g++ jq
         python3 -m pip install --user --upgrade pip
         python3 -m pip install --user gcovr
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
