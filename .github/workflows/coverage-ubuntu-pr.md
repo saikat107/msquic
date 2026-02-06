@@ -51,6 +51,8 @@ runs-on: ubuntu-latest
 
 env:
   GH_TOKEN: ${{ github.token }}
+  COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+  RUN_ID: ${{ github.run_id }}
   PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
   CONFIG: ${{ github.event.inputs.config || 'Debug' }}
   ARCH: ${{ github.event.inputs.arch || 'x64' }}
@@ -58,10 +60,46 @@ env:
   MAX_FILES: ${{ github.event.inputs.max_files || '10' }}
   INCLUDE_REGEX: ${{ github.event.inputs.include_regex || '^src/' }}
   EXCLUDE_REGEX: ${{ github.event.inputs.exclude_regex || '(\\.md$|\\.ya?ml$|\\.json$|\\.txt$|^docs/|^submodules/|^src/test/)' }}
+  PR_HEAD_REF: ${{ github.event.pull_request.head.ref || '' }}
+  PR_BASE_REF: ${{ github.event.pull_request.base.ref || '' }}
 
 engine:
   id: custom
   steps:
+    - name: Fetch PR metadata
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${PR_NUMBER:-}" ]; then
+          echo "PR_NUMBER is required" >&2
+          exit 1
+        fi
+
+        API_URL="${GITHUB_API_URL:-https://api.github.com}"
+        pr_json="$(curl -fsSL \
+          -H "Authorization: Bearer $GH_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          "$API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+
+        head_ref="$(printf '%s' "$pr_json" | jq -r '.head.ref')"
+        base_ref="$(printf '%s' "$pr_json" | jq -r '.base.ref')"
+        if [ -z "$head_ref" ] || [ "$head_ref" = "null" ] || [ -z "$base_ref" ] || [ "$base_ref" = "null" ]; then
+          echo "Unable to determine PR head/base refs for PR #$PR_NUMBER" >&2
+          exit 1
+        fi
+
+        echo "PR_HEAD_REF=$head_ref" >> "$GITHUB_ENV"
+        echo "PR_BASE_REF=$base_ref" >> "$GITHUB_ENV"
+        echo "PR head ref: $head_ref"
+        echo "PR base ref: $base_ref"
+
+    - name: Install Copilot CLI
+      shell: bash
+      run: |
+        set -euo pipefail
+        gh extension install github/gh-copilot || echo "Copilot CLI already installed"
+
     - name: Collect changed files from PR
       shell: bash
       run: |
@@ -118,12 +156,50 @@ engine:
         echo "Selected files:" 
         cat /tmp/changed_files.txt
 
+    - name: Run DeepTest (generate/update tests in working tree)
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
+          echo "COPILOT_GITHUB_TOKEN secret is required" >&2
+          exit 1
+        fi
+
+        bullets="$(sed 's/^/- /' /tmp/changed_files.txt)"
+        prompt="You are generating and/or updating tests for PR #$PR_NUMBER in $GITHUB_REPOSITORY.
+
+      Focus on these changed files (filtered, up to $MAX_FILES):
+      $bullets
+
+      Requirements:
+      - Follow MsQuic test patterns in src/test/. Prefer focused unit/functional tests.
+      - Cover error paths and boundary conditions; avoid flaky timing-dependent tests.
+      - Keep changes minimal outside src/test/ unless needed for testability.
+      - Run locally in this workflow checkout; do not push commits.
+      - Create a PR with all test changes using the workflow's safe output (create pull request); do NOT run gh pr create.
+      - Include workflow run ID $RUN_ID in the PR title."
+
+        gh copilot --agent DeepTest --allow-all-tools -p "$prompt"
+
+    - name: Detect generated changes
+      shell: bash
+      run: |
+        set -euo pipefail
+        if git status --porcelain | grep -q .; then
+          echo "HAS_CHANGES=true" >> "$GITHUB_ENV"
+          echo "Changes detected after DeepTest:"
+          git status --porcelain
+        else
+          echo "HAS_CHANGES=false" >> "$GITHUB_ENV"
+          echo "No changes detected after DeepTest."
+        fi
+
     - name: Prepare build dependencies
       shell: bash
       run: |
         set -euo pipefail
         sudo apt-get update
-        sudo apt-get install -y python3-pip gcov
+        sudo apt-get install -y python3-pip gcov jq
         python3 -m pip install --user --upgrade pip
         python3 -m pip install --user gcovr
         echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -192,6 +268,14 @@ engine:
           artifacts/TestResults/**
           artifacts/logs/**
           /tmp/changed_files.txt
+
+safe-outputs:
+  create-pull-request:
+    title-prefix: "[DeepTest+Coverage Ubuntu Run #${{ github.run_id }}] "
+    labels: [automation, tests]
+    draft: true
+    if-no-changes: "warn"
+  noop:
 
 ---
 
