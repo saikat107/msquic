@@ -1,0 +1,193 @@
+{
+  "component": "CUBIC",
+  "source": "/home/runner/work/msquic/msquic/src/core/cubic.c",
+  "header": "/home/runner/work/msquic/msquic/src/core/cubic.h",
+  "description": "CUBIC congestion control algorithm (RFC 8312bis) for QUIC",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "signature": "void CubicCongestionControlInitialize(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_SETTINGS_INTERNAL* Settings)",
+      "purpose": "Initializes CUBIC congestion control state",
+      "is_public": true,
+      "via_function_pointer": false
+    },
+    {
+      "name": "CubicCongestionControlCanSend",
+      "signature": "BOOLEAN CubicCongestionControlCanSend(_In_ QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Determines if more data can be sent",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlSetExemption",
+      "signature": "void CubicCongestionControlSetExemption(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint8_t NumPackets)",
+      "purpose": "Sets exemption count for bypassing CC",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlReset",
+      "signature": "void CubicCongestionControlReset(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ BOOLEAN FullReset)",
+      "purpose": "Resets CUBIC state to initial conditions",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlGetSendAllowance",
+      "signature": "uint32_t CubicCongestionControlGetSendAllowance(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint64_t TimeSinceLastSend, _In_ BOOLEAN TimeSinceLastSendValid)",
+      "purpose": "Calculates send allowance with pacing",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataSent",
+      "signature": "void CubicCongestionControlOnDataSent(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint32_t NumRetransmittableBytes)",
+      "purpose": "Notifies CC that data has been sent",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataInvalidated",
+      "signature": "BOOLEAN CubicCongestionControlOnDataInvalidated(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ uint32_t NumRetransmittableBytes)",
+      "purpose": "Notifies CC that sent data is no longer in flight",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataAcknowledged",
+      "signature": "BOOLEAN CubicCongestionControlOnDataAcknowledged(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_ACK_EVENT* AckEvent)",
+      "purpose": "Handles ACK event and updates congestion window",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlOnDataLost",
+      "signature": "void CubicCongestionControlOnDataLost(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_LOSS_EVENT* LossEvent)",
+      "purpose": "Handles loss event",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlOnEcn",
+      "signature": "void CubicCongestionControlOnEcn(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_ECN_EVENT* EcnEvent)",
+      "purpose": "Handles ECN signal",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlOnSpuriousCongestionEvent",
+      "signature": "BOOLEAN CubicCongestionControlOnSpuriousCongestionEvent(_In_ QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Reverts state after spurious congestion",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlLogOutFlowStatus",
+      "signature": "void CubicCongestionControlLogOutFlowStatus(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Logs outflow status",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlGetExemptions",
+      "signature": "uint8_t CubicCongestionControlGetExemptions(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Returns exemption count",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlGetBytesInFlightMax",
+      "signature": "uint32_t CubicCongestionControlGetBytesInFlightMax(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Returns max bytes in flight",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlIsAppLimited",
+      "signature": "BOOLEAN CubicCongestionControlIsAppLimited(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Checks if app-limited (always FALSE)",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlSetAppLimited",
+      "signature": "void CubicCongestionControlSetAppLimited(_In_ struct QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Sets app-limited (no-op)",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlGetCongestionWindow",
+      "signature": "uint32_t CubicCongestionControlGetCongestionWindow(_In_ const QUIC_CONGESTION_CONTROL* Cc)",
+      "purpose": "Returns congestion window",
+      "is_public": true,
+      "via_function_pointer": true
+    },
+    {
+      "name": "CubicCongestionControlGetNetworkStatistics",
+      "signature": "void CubicCongestionControlGetNetworkStatistics(_In_ const QUIC_CONNECTION* const Connection, _In_ const QUIC_CONGESTION_CONTROL* const Cc, _Out_ QUIC_NETWORK_STATISTICS* NetworkStatistics)",
+      "purpose": "Populates network statistics",
+      "is_public": true,
+      "via_function_pointer": true
+    }
+  ],
+  "internal_functions": [
+    {
+      "name": "CubeRoot",
+      "purpose": "Computes integer cube root",
+      "is_public": false
+    },
+    {
+      "name": "QuicConnLogCubic",
+      "purpose": "Logs CUBIC state",
+      "is_public": false
+    },
+    {
+      "name": "CubicCongestionHyStartChangeState",
+      "purpose": "Transitions HyStart state",
+      "is_public": false
+    },
+    {
+      "name": "CubicCongestionHyStartResetPerRttRound",
+      "purpose": "Resets HyStart per-RTT state",
+      "is_public": false
+    },
+    {
+      "name": "CubicCongestionControlUpdateBlockedState",
+      "purpose": "Updates blocked state",
+      "is_public": false
+    },
+    {
+      "name": "CubicCongestionControlOnCongestionEvent",
+      "purpose": "Handles congestion event",
+      "is_public": false
+    }
+  ],
+  "state_machine": {
+    "name": "CUBIC Congestion Control",
+    "states": [
+      "Initialization",
+      "Slow Start",
+      "Congestion Avoidance",
+      "Recovery",
+      "Persistent Congestion"
+    ],
+    "hystart_states": [
+      "HYSTART_NOT_STARTED",
+      "HYSTART_ACTIVE",
+      "HYSTART_DONE"
+    ]
+  },
+  "invariants": [
+    "CongestionWindow > 0",
+    "BytesInFlight <= CongestionWindow + exemptions",
+    "If IsInRecovery, then HasHadCongestionEvent",
+    "If IsInPersistentCongestion, then IsInRecovery",
+    "CWndSlowStartGrowthDivisor >= 1",
+    "HyStartState in {HYSTART_NOT_STARTED, HYSTART_ACTIVE, HYSTART_DONE}"
+  ],
+  "constants": {
+    "TEN_TIMES_BETA_CUBIC": 7,
+    "TEN_TIMES_C_CUBIC": 4
+  }
+}
