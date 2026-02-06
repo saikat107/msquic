@@ -1,0 +1,219 @@
+{
+  "component": "CUBIC",
+  "source_file": "./src/core/cubic.c",
+  "header_file": "./src/core/cubic.h",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "signature": "void CubicCongestionControlInitialize(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_SETTINGS_INTERNAL* Settings)",
+      "declared_in": "src/core/cubic.h:121-124",
+      "summary": "Initializes CUBIC congestion control state and registers function pointers for all CC operations.",
+      "preconditions": {
+        "Cc": "Must be non-NULL, pointing to valid QUIC_CONGESTION_CONTROL structure embedded in QUIC_CONNECTION",
+        "Settings": "Must be non-NULL, containing valid InitialWindowPackets and SendIdleTimeoutMs",
+        "Connection": "Cc must be part of valid QUIC_CONNECTION with initialized Paths[0] and Send.NextPacketNumber"
+      },
+      "postconditions": {
+        "function_pointers": "All 17 function pointers in Cc are set to CUBIC implementations",
+        "state": "Cubic state initialized: CongestionWindow = MTU * InitialWindowPackets, SlowStartThreshold = UINT32_MAX, HyStart in NOT_STARTED state",
+        "invariants": "BytesInFlightMax = CongestionWindow / 2, MinRttInCurrentRound = UINT64_MAX"
+      },
+      "side_effects": [
+        "Writes to entire QUIC_CONGESTION_CONTROL structure",
+        "Calls QuicConnLogOutFlowStats and QuicConnLogCubic for logging"
+      ],
+      "error_contract": "No error returns - assumes valid inputs (preconditions must be met)",
+      "thread_safety": "Not thread-safe. Caller must ensure exclusive access during initialization.",
+      "ownership": "Cc ownership remains with caller. No allocations."
+    }
+  ],
+  "internal_function_pointers": [
+    {
+      "name": "CubicCongestionControlCanSend",
+      "purpose": "Check if more data can be sent based on congestion window",
+      "returns": "TRUE if BytesInFlight < CongestionWindow OR Exemptions > 0"
+    },
+    {
+      "name": "CubicCongestionControlSetExemption",
+      "purpose": "Set number of packets that can bypass congestion window",
+      "parameters": {"NumPackets": "Number of exemption packets (0-255)"}
+    },
+    {
+      "name": "CubicCongestionControlReset",
+      "purpose": "Reset congestion control state to initial conditions",
+      "parameters": {"FullReset": "If TRUE, also resets BytesInFlight to 0"}
+    },
+    {
+      "name": "CubicCongestionControlGetSendAllowance",
+      "purpose": "Calculate how many bytes can be sent considering pacing and CongestionWindow",
+      "pacing": "When pacing enabled, spreads CongestionWindow over RTT; otherwise returns full available window"
+    },
+    {
+      "name": "CubicCongestionControlOnDataSent",
+      "purpose": "Update state when data is sent: increment BytesInFlight, decrement LastSendAllowance and Exemptions"
+    },
+    {
+      "name": "CubicCongestionControlOnDataInvalidated",
+      "purpose": "Update state when sent data is invalidated (e.g., packet dropped before ACK): decrement BytesInFlight"
+    },
+    {
+      "name": "CubicCongestionControlOnDataAcknowledged",
+      "purpose": "Core CUBIC algorithm: update CongestionWindow based on ACKs, handle HyStart++, slow start, and congestion avoidance",
+      "complexity": "Most complex function: ~280 lines, handles recovery, HyStart++ state machine, slow start growth, CUBIC/AIMD window calculations"
+    },
+    {
+      "name": "CubicCongestionControlOnDataLost",
+      "purpose": "Handle packet loss: trigger congestion event if loss detected outside recovery"
+    },
+    {
+      "name": "CubicCongestionControlOnEcn",
+      "purpose": "Handle ECN congestion signal: trigger congestion event"
+    },
+    {
+      "name": "CubicCongestionControlOnSpuriousCongestionEvent",
+      "purpose": "Revert to previous state if congestion event determined to be spurious"
+    },
+    {
+      "name": "CubicCongestionControlLogOutFlowStatus",
+      "purpose": "Log current congestion control statistics"
+    },
+    {
+      "name": "CubicCongestionControlGetExemptions",
+      "purpose": "Return current exemption count"
+    },
+    {
+      "name": "CubicCongestionControlGetBytesInFlightMax",
+      "purpose": "Return BytesInFlightMax watermark"
+    },
+    {
+      "name": "CubicCongestionControlIsAppLimited",
+      "purpose": "Returns FALSE (not implemented for CUBIC)"
+    },
+    {
+      "name": "CubicCongestionControlSetAppLimited",
+      "purpose": "No-op (not implemented for CUBIC)"
+    },
+    {
+      "name": "CubicCongestionControlGetCongestionWindow",
+      "purpose": "Return current CongestionWindow value"
+    },
+    {
+      "name": "CubicCongestionControlGetNetworkStatistics",
+      "purpose": "Populate QUIC_NETWORK_STATISTICS structure with current stats"
+    }
+  ],
+  "type_invariants": {
+    "QUIC_CONGESTION_CONTROL_CUBIC": {
+      "always_true": [
+        "CongestionWindow > 0",
+        "BytesInFlightMax <= CongestionWindow (typically CongestionWindow/2 until grows)",
+        "InitialWindowPackets > 0",
+        "Exemptions >= 0 (uint8_t)",
+        "If IsInRecovery is TRUE, then HasHadCongestionEvent must be TRUE",
+        "If HasHadCongestionEvent is TRUE, then RecoverySentPacketNumber is valid",
+        "SlowStartThreshold is either UINT32_MAX (not yet set) or a valid byte count"
+      ],
+      "state_machine": {
+        "states": ["NOT_IN_RECOVERY", "IN_RECOVERY", "IN_PERSISTENT_CONGESTION"],
+        "transitions": {
+          "NOT_IN_RECOVERY -> IN_RECOVERY": "CubicCongestionControlOnCongestionEvent(IsPersistentCongestion=FALSE)",
+          "IN_RECOVERY -> IN_PERSISTENT_CONGESTION": "CubicCongestionControlOnCongestionEvent(IsPersistentCongestion=TRUE)",
+          "IN_RECOVERY -> NOT_IN_RECOVERY": "OnDataAcknowledged with LargestAck > RecoverySentPacketNumber",
+          "IN_PERSISTENT_CONGESTION -> NOT_IN_RECOVERY": "OnDataAcknowledged with LargestAck > RecoverySentPacketNumber"
+        }
+      },
+      "hystart_state_machine": {
+        "states": ["HYSTART_NOT_STARTED", "HYSTART_ACTIVE", "HYSTART_DONE"],
+        "transitions": {
+          "HYSTART_NOT_STARTED -> HYSTART_ACTIVE": "RTT delay increase detected during slow start (MinRttInCurrentRound >= MinRttInLastRound + Eta)",
+          "HYSTART_ACTIVE -> HYSTART_DONE": "ConservativeSlowStartRounds reaches 0",
+          "HYSTART_NOT_STARTED -> HYSTART_DONE": "Congestion event OR explicit state change",
+          "HYSTART_ACTIVE -> HYSTART_NOT_STARTED": "RTT decrease detected (MinRttInCurrentRound < CssBaselineMinRtt)",
+          "Any -> HYSTART_DONE": "Congestion event forces immediate DONE"
+        },
+        "state_invariants": {
+          "HYSTART_NOT_STARTED": "CWndSlowStartGrowthDivisor == 1, in slow start (CongestionWindow < SlowStartThreshold)",
+          "HYSTART_ACTIVE": "CWndSlowStartGrowthDivisor == QUIC_CONSERVATIVE_SLOW_START_DEFAULT_GROWTH_DIVISOR, ConservativeSlowStartRounds > 0",
+          "HYSTART_DONE": "CWndSlowStartGrowthDivisor == 1, typically CongestionWindow >= SlowStartThreshold"
+        }
+      },
+      "window_relationships": [
+        "In slow start: CongestionWindow < SlowStartThreshold",
+        "In congestion avoidance: CongestionWindow >= SlowStartThreshold",
+        "WindowMax = max(CongestionWindow) at congestion event",
+        "WindowLastMax = previous WindowMax (for fast convergence)",
+        "WindowPrior = CongestionWindow at start of recovery",
+        "AimdWindow = AIMD-friendly window (grows more conservatively than CUBIC)",
+        "CongestionWindow = max(CubicWindow, AimdWindow) with limits"
+      ]
+    }
+  },
+  "environment_invariants": [
+    "Connection must be initialized with valid Paths[0] (MTU, SmoothedRtt, etc.)",
+    "QuicCongestionControlGetConnection(Cc) must work: uses CXPLAT_CONTAINING_RECORD to get Connection from Cc",
+    "Settings must be initialized before CubicCongestionControlInitialize",
+    "All callbacks (QuicConnLogOutFlowStats, QuicConnLogCubic) must be safe to call",
+    "No memory allocation/deallocation - all state is embedded in QUIC_CONGESTION_CONTROL_CUBIC",
+    "Thread safety: caller ensures serialization of all operations on same Cc"
+  ],
+  "key_algorithms": {
+    "CubeRoot": {
+      "purpose": "Calculate integer cube root for CUBIC K parameter",
+      "algorithm": "Shifting nth root algorithm (iterates in 3-bit chunks)",
+      "pure_function": true
+    },
+    "CUBIC_window_calculation": {
+      "formula": "W_cubic(t) = C*(t-K)^3 + WindowMax",
+      "parameters": {
+        "C": "TEN_TIMES_C_CUBIC / 10 = 0.4",
+        "t": "Time since congestion avoidance start + SmoothedRtt",
+        "K": "Time to reach WindowMax = CubeRoot((WindowMax / MTU) * (1 - BETA) / C)",
+        "BETA": "TEN_TIMES_BETA_CUBIC / 10 = 0.7"
+      }
+    },
+    "AIMD_window": {
+      "purpose": "RFC 8312 TCP-friendly window (Reno-friendly region)",
+      "slope": "0.5 MSS/RTT until WindowPrior, then 1 MSS/RTT",
+      "implementation": "Appropriate Byte Counting (RFC 3465)"
+    },
+    "HyStart++": {
+      "purpose": "Exit slow start early when RTT increase detected",
+      "detection": "MinRttInCurrentRound >= MinRttInLastRound + Eta (where Eta = MinRttInLastRound/8)",
+      "conservative_slow_start": "After detection, use slower growth for N rounds before entering CA"
+    }
+  },
+  "testing_considerations": {
+    "public_api_only": "Only CubicCongestionControlInitialize is directly callable. All other operations accessed via function pointers after init.",
+    "scenarios": [
+      "Initialization with various MTU and window sizes",
+      "Slow start exponential growth",
+      "Transition from slow start to congestion avoidance",
+      "HyStart++ early exit from slow start",
+      "Conservative slow start after HyStart++",
+      "CUBIC concave region (t < K)",
+      "CUBIC convex region (t > K)",
+      "Reno-friendly AIMD region",
+      "Congestion event handling (loss-triggered)",
+      "ECN-triggered congestion event",
+      "Persistent congestion",
+      "Recovery completion",
+      "Spurious congestion event revert",
+      "Fast convergence (multiple congestion events)",
+      "Pacing calculation",
+      "Send allowance with and without pacing",
+      "Exemption packets",
+      "BytesInFlight tracking",
+      "Data invalidation",
+      "Window growth limits (2*BytesInFlightMax cap)",
+      "Idle timeout handling"
+    ],
+    "boundary_conditions": [
+      "Minimum MTU (1200 bytes)",
+      "Maximum MTU (65535 bytes)",
+      "InitialWindowPackets = 1",
+      "InitialWindowPackets = 1000",
+      "CongestionWindow overflow protection",
+      "DeltaT > 2.5M milliseconds (overflow protection)"
+    ]
+  }
+}
