@@ -153,6 +153,7 @@ jobs:
           sparse-checkout: |
             actions
             prompts
+            .github/aw/prompts
           path: gh-aw-actions-source
           fetch-depth: 1
           persist-credentials: false
@@ -166,7 +167,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /opt/gh-aw/prompts
-          cp -R gh-aw-actions-source/prompts/* /opt/gh-aw/prompts/
+
+          if [ -d "gh-aw-actions-source/prompts" ]; then
+            cp -R gh-aw-actions-source/prompts/* /opt/gh-aw/prompts/
+          elif [ -d "gh-aw-actions-source/.github/aw/prompts" ]; then
+            cp -R gh-aw-actions-source/.github/aw/prompts/* /opt/gh-aw/prompts/
+          else
+            # Fallback: minimal prompt assets to keep downstream steps working.
+            cat > /opt/gh-aw/prompts/temp_folder_prompt.md << 'EOF'
+            You may use /tmp for temporary files. Do not assume persistence.
+            EOF
+            cat > /opt/gh-aw/prompts/markdown.md << 'EOF'
+            When producing structured output, follow the tool schemas exactly.
+            EOF
+          fi
       - name: Mirror gh-aw actions for Node on Windows
         shell: pwsh
         run: |

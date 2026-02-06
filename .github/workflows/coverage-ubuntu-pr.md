@@ -166,18 +166,21 @@ engine:
         fi
 
         bullets="$(sed 's/^/- /' /tmp/changed_files.txt)"
-        prompt="You are generating and/or updating tests for PR #$PR_NUMBER in $GITHUB_REPOSITORY.
+        prompt="$(cat <<EOF
+        You are generating and/or updating tests for PR #$PR_NUMBER in $GITHUB_REPOSITORY.
 
-      Focus on these changed files (filtered, up to $MAX_FILES):
-      $bullets
+        Focus on these changed files (filtered, up to $MAX_FILES):
+        $bullets
 
-      Requirements:
-      - Follow MsQuic test patterns in src/test/. Prefer focused unit/functional tests.
-      - Cover error paths and boundary conditions; avoid flaky timing-dependent tests.
-      - Keep changes minimal outside src/test/ unless needed for testability.
-      - Run locally in this workflow checkout; do not push commits.
-      - Create a PR with all test changes using the workflow's safe output (create pull request); do NOT run gh pr create.
-      - Include workflow run ID $RUN_ID in the PR title."
+        Requirements:
+        - Follow MsQuic test patterns in src/test/. Prefer focused unit/functional tests.
+        - Cover error paths and boundary conditions; avoid flaky timing-dependent tests.
+        - Keep changes minimal outside src/test/ unless needed for testability.
+        - Run locally in this workflow checkout; do not push commits.
+        - Create a PR with all test changes using the workflow's safe output (create pull request); do NOT run gh pr create.
+        - Include workflow run ID $RUN_ID in the PR title.
+        EOF
+        )"
 
         gh copilot --agent DeepTest --allow-all-tools -p "$prompt"
 
