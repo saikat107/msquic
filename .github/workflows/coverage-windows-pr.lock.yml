@@ -152,6 +152,7 @@ jobs:
           repository: github/gh-aw
           sparse-checkout: |
             actions
+            prompts
           path: gh-aw-actions-source
           fetch-depth: 1
           persist-credentials: false
@@ -160,6 +161,28 @@ jobs:
         env:
           INPUT_DESTINATION: /opt/gh-aw/actions
         run: bash gh-aw-actions-source/actions/setup/setup.sh
+      - name: Install gh-aw prompts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /opt/gh-aw/prompts
+          cp -R gh-aw-actions-source/prompts/* /opt/gh-aw/prompts/
+      - name: Mirror gh-aw actions for Node on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'gh-aw-actions-source\actions'
+          if (-not (Test-Path $source)) {
+            throw "Missing gh-aw actions source at $source"
+          }
+
+          foreach ($drive in @('C:', 'D:')) {
+            if (-not (Test-Path ($drive + '\\'))) { continue }
+            $dest = Join-Path $drive 'opt\gh-aw\actions'
+            New-Item -ItemType Directory -Force -Path $dest | Out-Null
+            Copy-Item -Path (Join-Path $source '*') -Destination $dest -Recurse -Force
+            Write-Host "Copied gh-aw actions to $dest"
+          }
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
