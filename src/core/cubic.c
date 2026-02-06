@@ -123,6 +123,7 @@ CubicCongestionHyStartChangeState(
             Cubic->SlowStartThreshold);
 
         Cubic->HyStartState = NewHyStartState;
+        QuicConnLogCubic(Connection);
     }
 }
 
