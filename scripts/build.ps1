@@ -536,7 +536,7 @@ function CMake-Generate {
     }
     if ($CodeCoverage) {
         if ($IsLinux) {
-            $Arguments += " -DCMAKE_C_FLAGS=--coverage -DCMAKE_CXX_FLAGS=--coverage"
+            $Arguments += " -DQUIC_CODE_COVERAGE=ON"
         }
         else {
             Write-Warning "-CodeCoverage is only supported on Linux systems. Ignoring flag."
