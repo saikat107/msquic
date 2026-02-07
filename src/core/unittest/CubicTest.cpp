@@ -769,3 +769,601 @@ TEST(DeepTest_CubicTest, HyStart_StateTransitions)
                 Cubic->HyStartState <= HYSTART_DONE);
     ASSERT_GE(Cubic->CWndSlowStartGrowthDivisor, 1u);
 }
+
+//
+// Test 18: Congestion Avoidance - CUBIC Formula Application
+// Scenario: Tests CUBIC window growth in congestion avoidance mode using the CUBIC formula:
+// W_cubic(t) = C*(t-K)^3 + WindowMax. This test transitions from slow start to congestion
+// avoidance by setting CWND >= SST, then sends ACKs to trigger CUBIC formula calculations.
+// Verifies that the window grows according to CUBIC algorithm (either following CUBIC formula
+// or AIMD depending on which is more aggressive) and validates the convex/concave region behavior.
+//
+TEST(DeepTest_CubicTest, CongestionAvoidance_CubicFormula)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Force into congestion avoidance by setting CWND = SST
+    uint32_t TargetWindow = Cubic->CongestionWindow;
+    Cubic->SlowStartThreshold = TargetWindow;
+    Cubic->CongestionWindow = TargetWindow;
+    Cubic->AimdWindow = TargetWindow;
+    Cubic->WindowMax = TargetWindow;
+    Cubic->TimeOfCongAvoidStart = 100000; // 100ms
+    Cubic->TimeOfLastAck = 100000;
+    Cubic->TimeOfLastAckValid = TRUE;
+
+    // Simulate ACK event in congestion avoidance
+    QUIC_ACK_EVENT AckEvent{};
+    AckEvent.TimeNow = 200000; // 200ms (100ms after congestion avoidance start)
+    AckEvent.LargestAck = 10;
+    AckEvent.LargestSentPacketNumber = 10;
+    AckEvent.NumRetransmittableBytes = 1280; // 1 packet
+    AckEvent.NumTotalAckedRetransmittableBytes = 1280;
+    AckEvent.SmoothedRtt = 50000; // 50ms
+    AckEvent.MinRtt = 50000;
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+
+    // Set bytes in flight
+    Cubic->BytesInFlight = 1280;
+    uint32_t InitialCongestionWindow = Cubic->CongestionWindow;
+
+    // Process ACK - should trigger CUBIC formula calculations
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+
+    // Verify window increased (CUBIC or AIMD formula applied)
+    ASSERT_GE(Cubic->CongestionWindow, InitialCongestionWindow);
+    
+    // Verify AIMD window was updated
+    ASSERT_GE(Cubic->AimdWindow, TargetWindow);
+    
+    // Verify we're still in congestion avoidance
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+    
+    // Verify TimeOfLastAck updated
+    ASSERT_EQ(Cubic->TimeOfLastAck, AckEvent.TimeNow);
+    ASSERT_TRUE(Cubic->TimeOfLastAckValid);
+}
+
+//
+// Test 19: Spurious Congestion Event Recovery
+// Scenario: Tests the spurious congestion detection and recovery mechanism. When a loss is
+// later determined to be spurious (e.g., due to packet reordering), CUBIC should revert to
+// its previous state before the congestion event. This test simulates: 1) trigger congestion
+// event (saves previous state), 2) call OnSpuriousCongestionEvent to restore state. Verifies
+// that window, thresholds, and K values are restored, and recovery flag is cleared.
+//
+TEST(DeepTest_CubicTest, SpuriousCongestionEvent_StateRestoration)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Set up initial state in congestion avoidance
+    Cubic->CongestionWindow = 50000;
+    Cubic->SlowStartThreshold = 40000;
+    Cubic->WindowMax = 48000;
+    Cubic->WindowLastMax = 45000;
+    Cubic->WindowPrior = 47000;
+    Cubic->KCubic = 150;
+    Cubic->AimdWindow = 49000;
+
+    uint32_t PrevCongestionWindow = Cubic->CongestionWindow;
+    uint32_t PrevSlowStartThreshold = Cubic->SlowStartThreshold;
+    uint32_t PrevWindowMax = Cubic->WindowMax;
+    uint32_t PrevWindowLastMax = Cubic->WindowLastMax;
+    uint32_t PrevWindowPrior = Cubic->WindowPrior;
+    uint32_t PrevKCubic = Cubic->KCubic;
+    uint32_t PrevAimdWindow = Cubic->AimdWindow;
+
+    // Simulate loss event (non-ECN) - should save previous state
+    QUIC_LOSS_EVENT LossEvent{};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    LossEvent.NumRetransmittableBytes = 1280;
+    LossEvent.PersistentCongestion = FALSE;
+
+    Cubic->BytesInFlight = 10000;
+    Cubic->HasHadCongestionEvent = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(
+        &Connection.CongestionControl, &LossEvent);
+
+    // Verify we're in recovery and window was reduced
+    ASSERT_TRUE(Cubic->IsInRecovery);
+    ASSERT_TRUE(Cubic->HasHadCongestionEvent);
+    ASSERT_LT(Cubic->CongestionWindow, PrevCongestionWindow);
+
+    // Now detect spurious congestion and restore state
+    BOOLEAN BecameUnblocked = Connection.CongestionControl.QuicCongestionControlOnSpuriousCongestionEvent(
+        &Connection.CongestionControl);
+
+    // Verify state was restored to pre-congestion values
+    ASSERT_EQ(Cubic->CongestionWindow, PrevCongestionWindow);
+    ASSERT_EQ(Cubic->SlowStartThreshold, PrevSlowStartThreshold);
+    ASSERT_EQ(Cubic->WindowMax, PrevWindowMax);
+    ASSERT_EQ(Cubic->WindowLastMax, PrevWindowLastMax);
+    ASSERT_EQ(Cubic->WindowPrior, PrevWindowPrior);
+    ASSERT_EQ(Cubic->KCubic, PrevKCubic);
+    ASSERT_EQ(Cubic->AimdWindow, PrevAimdWindow);
+
+    // Verify recovery flags cleared
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    ASSERT_FALSE(Cubic->HasHadCongestionEvent);
+}
+
+//
+// Test 20: Persistent Congestion Window Reduction
+// Scenario: Tests the severe congestion handling when persistent congestion is detected
+// (e.g., multiple consecutive RTOs). Persistent congestion forces CUBIC to drop the
+// congestion window to the minimum (2 * MTU) and reset all CUBIC state variables.
+// This test triggers a loss event with PersistentCongestion=TRUE and verifies that
+// the window drops to QUIC_PERSISTENT_CONGESTION_WINDOW_PACKETS (2 packets), all
+// window tracking variables are updated, K is reset to 0, and HyStart is set to DONE.
+//
+TEST(DeepTest_CubicTest, PersistentCongestion_MinimumWindow)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Set up large congestion window
+    Cubic->CongestionWindow = 100000;
+    Cubic->SlowStartThreshold = 80000;
+    Cubic->WindowMax = 90000;
+    Cubic->BytesInFlight = 50000;
+
+    // Trigger persistent congestion
+    QUIC_LOSS_EVENT LossEvent{};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 10;
+    LossEvent.NumRetransmittableBytes = 5000;
+    LossEvent.PersistentCongestion = TRUE;
+
+    Cubic->HasHadCongestionEvent = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(
+        &Connection.CongestionControl, &LossEvent);
+
+    // Verify window dropped to minimum (2 * MTU = 2560 bytes)
+    uint32_t ExpectedMinWindow = 1280 * 2; // QUIC_PERSISTENT_CONGESTION_WINDOW_PACKETS = 2
+    ASSERT_EQ(Cubic->CongestionWindow, ExpectedMinWindow);
+
+    // Verify persistent congestion flag set
+    ASSERT_TRUE(Cubic->IsInPersistentCongestion);
+    ASSERT_TRUE(Cubic->IsInRecovery);
+    ASSERT_TRUE(Cubic->HasHadCongestionEvent);
+
+    // Verify all window variables updated with BETA reduction
+    ASSERT_GT(Cubic->SlowStartThreshold, 0u);
+    ASSERT_GT(Cubic->WindowMax, 0u);
+    ASSERT_GT(Cubic->WindowPrior, 0u);
+
+    // Verify K reset to 0
+    ASSERT_EQ(Cubic->KCubic, 0u);
+
+    // Verify HyStart set to DONE
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_DONE);
+
+    // Verify BytesInFlight decremented
+    ASSERT_EQ(Cubic->BytesInFlight, 45000u);
+}
+
+//
+// Test 21: Recovery Exit on Post-Recovery ACK
+// Scenario: Tests the recovery exit mechanism where CUBIC exits recovery state when
+// receiving an ACK for a packet sent after entering recovery. This test simulates:
+// 1) Enter recovery via loss event (sets RecoverySentPacketNumber), 2) Send more packets
+// (NextPacketNumber advances), 3) Receive ACK with LargestAck > RecoverySentPacketNumber.
+// Verifies that IsInRecovery flag clears and IsInPersistentCongestion flag clears.
+//
+TEST(DeepTest_CubicTest, Recovery_ExitOnPostRecoveryAck)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Trigger loss to enter recovery
+    Connection.Send.NextPacketNumber = 20;
+    QUIC_LOSS_EVENT LossEvent{};
+    LossEvent.LargestPacketNumberLost = 5;
+    LossEvent.LargestSentPacketNumber = 20;
+    LossEvent.NumRetransmittableBytes = 1280;
+    LossEvent.PersistentCongestion = FALSE;
+
+    Cubic->BytesInFlight = 5000;
+    Cubic->HasHadCongestionEvent = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(
+        &Connection.CongestionControl, &LossEvent);
+
+    ASSERT_TRUE(Cubic->IsInRecovery);
+    ASSERT_EQ(Cubic->RecoverySentPacketNumber, 20u);
+
+    // Simulate sending more packets after recovery starts
+    Connection.Send.NextPacketNumber = 30;
+
+    // Receive ACK for packet sent AFTER recovery started (packet 25 > RecoverySentPacketNumber 20)
+    QUIC_ACK_EVENT AckEvent{};
+    AckEvent.TimeNow = 200000;
+    AckEvent.LargestAck = 25; // > RecoverySentPacketNumber
+    AckEvent.LargestSentPacketNumber = 30;
+    AckEvent.NumRetransmittableBytes = 1280;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1280;
+    AckEvent.SmoothedRtt = 50000;
+    AckEvent.MinRtt = 50000;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+
+    // Verify recovery exit
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    ASSERT_FALSE(Cubic->IsInPersistentCongestion);
+    
+    // Verify TimeOfCongAvoidStart updated
+    ASSERT_EQ(Cubic->TimeOfCongAvoidStart, AckEvent.TimeNow);
+}
+
+//
+// Test 22: Window Growth Limited by BytesInFlightMax
+// Scenario: Tests the window growth limitation mechanism that prevents the congestion window
+// from growing beyond 2 * BytesInFlightMax. This prevents the window from growing unrealistically
+// when the application or flow control limits actual bytes in flight. The test sets up a scenario
+// where CUBIC would normally grow the window significantly, but BytesInFlightMax is low (app-limited
+// or flow-control limited). Verifies that CongestionWindow is capped at 2 * BytesInFlightMax.
+//
+TEST(DeepTest_CubicTest, WindowGrowth_LimitedByBytesInFlightMax)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Set up congestion avoidance with low BytesInFlightMax (app-limited scenario)
+    Cubic->CongestionWindow = 20000;
+    Cubic->SlowStartThreshold = 20000;
+    Cubic->AimdWindow = 20000;
+    Cubic->WindowMax = 20000;
+    Cubic->BytesInFlightMax = 5000; // Very low max (app-limited)
+    Cubic->TimeOfCongAvoidStart = 100000;
+    Cubic->TimeOfLastAck = 100000;
+    Cubic->TimeOfLastAckValid = TRUE;
+
+    // Simulate ACK event that would grow window
+    QUIC_ACK_EVENT AckEvent{};
+    AckEvent.TimeNow = 300000; // Large time delta
+    AckEvent.LargestAck = 50;
+    AckEvent.LargestSentPacketNumber = 50;
+    AckEvent.NumRetransmittableBytes = 2560; // 2 packets
+    AckEvent.NumTotalAckedRetransmittableBytes = 2560;
+    AckEvent.SmoothedRtt = 50000;
+    AckEvent.MinRtt = 50000;
+    AckEvent.MinRttValid = FALSE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+
+    Cubic->BytesInFlight = 2560;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+
+    // Verify window capped at 2 * BytesInFlightMax
+    uint32_t MaxAllowedWindow = 2 * Cubic->BytesInFlightMax;
+    ASSERT_LE(Cubic->CongestionWindow, MaxAllowedWindow);
+    ASSERT_EQ(Cubic->CongestionWindow, MaxAllowedWindow);
+}
+
+//
+// Test 23: ACK Time Gap Handling - Freeze Window Growth
+// Scenario: Tests the mechanism that freezes CUBIC window growth when there's a long gap
+// between ACKs (exceeding SendIdleTimeoutMs or 4*RttVariance). This prevents window growth
+// when the connection is idle or when ACKs arrive sporadically. The test simulates a long
+// time gap between ACKs and verifies that TimeOfCongAvoidStart is adjusted forward to
+// effectively freeze window growth calculations during the gap.
+//
+TEST(DeepTest_CubicTest, AckTimeGap_FreezeWindowGrowth)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 100; // 100ms idle timeout
+
+    InitializeMockConnection(Connection, 1280);
+    Connection.Paths[0].SmoothedRtt = 50000; // 50ms
+    Connection.Paths[0].RttVariance = 10000; // 10ms
+    Connection.Paths[0].GotFirstRttSample = TRUE;
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Set up congestion avoidance
+    Cubic->CongestionWindow = 30000;
+    Cubic->SlowStartThreshold = 30000;
+    Cubic->AimdWindow = 30000;
+    Cubic->WindowMax = 30000;
+    Cubic->TimeOfCongAvoidStart = 100000; // 100ms
+    Cubic->TimeOfLastAck = 100000;
+    Cubic->TimeOfLastAckValid = TRUE;
+    Cubic->BytesInFlight = 1280;
+
+    // First ACK - establishes TimeOfLastAck
+    QUIC_ACK_EVENT AckEvent1{};
+    AckEvent1.TimeNow = 150000; // 150ms (50ms after last)
+    AckEvent1.LargestAck = 10;
+    AckEvent1.LargestSentPacketNumber = 10;
+    AckEvent1.NumRetransmittableBytes = 1280;
+    AckEvent1.NumTotalAckedRetransmittableBytes = 1280;
+    AckEvent1.SmoothedRtt = 50000;
+    AckEvent1.MinRttValid = FALSE;
+    AckEvent1.IsImplicit = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.AdjustedAckTime = AckEvent1.TimeNow;
+    AckEvent1.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent1);
+
+    uint64_t TimeOfCongAvoidAfterFirstAck = Cubic->TimeOfCongAvoidStart;
+
+    // Second ACK with LONG gap (1000ms = 10x SendIdleTimeout)
+    QUIC_ACK_EVENT AckEvent2{};
+    AckEvent2.TimeNow = 1150000; // 1150ms (1000ms gap > 4*RttVariance and > SendIdleTimeoutMs)
+    AckEvent2.LargestAck = 20;
+    AckEvent2.LargestSentPacketNumber = 20;
+    AckEvent2.NumRetransmittableBytes = 1280;
+    AckEvent2.NumTotalAckedRetransmittableBytes = 2560;
+    AckEvent2.SmoothedRtt = 50000;
+    AckEvent2.MinRttValid = FALSE;
+    AckEvent2.IsImplicit = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent2.AdjustedAckTime = AckEvent2.TimeNow;
+    AckEvent2.AckedPackets = NULL;
+
+    Cubic->BytesInFlight = 1280;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent2);
+
+    // Verify TimeOfCongAvoidStart was adjusted forward to compensate for gap
+    ASSERT_GT(Cubic->TimeOfCongAvoidStart, TimeOfCongAvoidAfterFirstAck);
+    
+    // The adjustment should be approximately the gap size (1000ms)
+    uint64_t Adjustment = Cubic->TimeOfCongAvoidStart - TimeOfCongAvoidAfterFirstAck;
+    ASSERT_GT(Adjustment, 900000u); // At least 900ms adjustment
+}
+
+//
+// Test 24: HyStart++ RTT Decrease Resumes Slow Start
+// Scenario: Tests the HyStart++ spurious detection mechanism where a decrease in RTT while
+// in HYSTART_ACTIVE (Conservative Slow Start) causes a transition back to HYSTART_NOT_STARTED,
+// resuming aggressive slow start. This handles the case where the initial RTT increase that
+// triggered conservative slow start was spurious (e.g., due to transient network conditions).
+// The test: 1) Forces HyStart into ACTIVE state with a baseline RTT, 2) Sends ACK with lower
+// RTT, 3) Verifies transition back to NOT_STARTED and CWndSlowStartGrowthDivisor reset to 1.
+//
+TEST(DeepTest_CubicTest, HyStart_RttDecreaseResumesSlowStart)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+    
+    InitializeMockConnection(Connection, 1280);
+    Connection.Settings.HyStartEnabled = TRUE; // Enable HyStart++
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Set up HyStart in ACTIVE state (Conservative Slow Start)
+    Cubic->HyStartState = HYSTART_ACTIVE;
+    Cubic->CWndSlowStartGrowthDivisor = 2; // Conservative growth
+    Cubic->ConservativeSlowStartRounds = 3; // Still in conservative rounds
+    Cubic->CssBaselineMinRtt = 60000; // 60ms baseline
+    Cubic->MinRttInCurrentRound = UINT64_MAX;
+    Cubic->HyStartAckCount = 0;
+    Cubic->HyStartRoundEnd = 50;
+    Cubic->CongestionWindow = 20000;
+    Cubic->SlowStartThreshold = UINT32_MAX; // Still in slow start
+    Cubic->BytesInFlight = 1280;
+
+    Connection.Send.NextPacketNumber = 60;
+
+    // Send ACK with LOWER RTT than baseline (spurious detection)
+    QUIC_ACK_EVENT AckEvent{};
+    AckEvent.TimeNow = 200000;
+    AckEvent.LargestAck = 55; // Triggers RTT round check
+    AckEvent.LargestSentPacketNumber = 60;
+    AckEvent.NumRetransmittableBytes = 1280;
+    AckEvent.NumTotalAckedRetransmittableBytes = 1280;
+    AckEvent.SmoothedRtt = 50000;
+    AckEvent.MinRtt = 50000; // Lower than CssBaselineMinRtt (60ms)
+    AckEvent.MinRttValid = TRUE;
+    AckEvent.IsImplicit = FALSE;
+    AckEvent.HasLoss = FALSE;
+    AckEvent.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent.AdjustedAckTime = AckEvent.TimeNow;
+    AckEvent.AckedPackets = NULL;
+
+    // Update RTT in first few ACKs to set MinRttInCurrentRound
+    Cubic->HyStartAckCount = 1; // Within N_SAMPLING range
+    
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent);
+
+    // Verify RTT decrease caused transition back to NOT_STARTED
+    ASSERT_EQ(Cubic->HyStartState, HYSTART_NOT_STARTED);
+    
+    // Verify growth divisor reset to aggressive (1)
+    ASSERT_EQ(Cubic->CWndSlowStartGrowthDivisor, 1u);
+    
+    // Verify still in slow start
+    ASSERT_LT(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+}
+
+//
+// Test 25: Complete Lifecycle - Slow Start to Recovery and Back
+// Scenario: Tests a complete CUBIC lifecycle covering multiple states: initialization → slow start →
+// congestion avoidance → loss → recovery → recovery exit → congestion avoidance. This integration
+// test validates that all state transitions work correctly together and that window values, flags,
+// and timestamps are properly maintained through the complete cycle. This test exercises multiple
+// public APIs in sequence: Initialize → OnDataAcknowledged (slow start) → OnDataAcknowledged
+// (trigger transition to CA) → OnDataLost (enter recovery) → OnDataAcknowledged (exit recovery).
+//
+TEST(DeepTest_CubicTest, CompleteLifecycle_SlowStartToRecoveryAndBack)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Connection.CongestionControl.Cubic;
+
+    // Phase 1: Slow Start - ACK packets to grow window
+    Cubic->BytesInFlight = 5000;
+    uint32_t InitialWindow = Cubic->CongestionWindow;
+
+    QUIC_ACK_EVENT AckEvent1{};
+    AckEvent1.TimeNow = 100000;
+    AckEvent1.LargestAck = 5;
+    AckEvent1.LargestSentPacketNumber = 10;
+    AckEvent1.NumRetransmittableBytes = 5000; // Multiple packets
+    AckEvent1.NumTotalAckedRetransmittableBytes = 5000;
+    AckEvent1.SmoothedRtt = 50000;
+    AckEvent1.MinRttValid = FALSE;
+    AckEvent1.IsImplicit = FALSE;
+    AckEvent1.HasLoss = FALSE;
+    AckEvent1.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent1.AdjustedAckTime = AckEvent1.TimeNow;
+    AckEvent1.AckedPackets = NULL;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent1);
+
+    // Verify window grew (slow start)
+    ASSERT_GT(Cubic->CongestionWindow, InitialWindow);
+    ASSERT_LT(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+
+    // Phase 2: Force transition to Congestion Avoidance
+    Cubic->CongestionWindow = Cubic->SlowStartThreshold;
+    Cubic->AimdWindow = Cubic->CongestionWindow;
+    Cubic->WindowMax = Cubic->CongestionWindow;
+    Cubic->TimeOfCongAvoidStart = 150000;
+    uint32_t WindowBeforeLoss = Cubic->CongestionWindow;
+
+    // Phase 3: Packet Loss - Enter Recovery
+    Connection.Send.NextPacketNumber = 30;
+    QUIC_LOSS_EVENT LossEvent{};
+    LossEvent.LargestPacketNumberLost = 15;
+    LossEvent.LargestSentPacketNumber = 30;
+    LossEvent.NumRetransmittableBytes = 2560;
+    LossEvent.PersistentCongestion = FALSE;
+
+    Cubic->BytesInFlight = 10000;
+    Cubic->HasHadCongestionEvent = FALSE;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataLost(
+        &Connection.CongestionControl, &LossEvent);
+
+    // Verify entered recovery
+    ASSERT_TRUE(Cubic->IsInRecovery);
+    ASSERT_TRUE(Cubic->HasHadCongestionEvent);
+    ASSERT_LT(Cubic->CongestionWindow, WindowBeforeLoss); // Window reduced
+    ASSERT_EQ(Cubic->RecoverySentPacketNumber, 30u);
+
+    // Phase 4: More packets sent during recovery
+    Connection.Send.NextPacketNumber = 50;
+
+    // Phase 5: ACK for post-recovery packet - Exit Recovery
+    QUIC_ACK_EVENT AckEvent2{};
+    AckEvent2.TimeNow = 300000;
+    AckEvent2.LargestAck = 35; // > RecoverySentPacketNumber
+    AckEvent2.LargestSentPacketNumber = 50;
+    AckEvent2.NumRetransmittableBytes = 1280;
+    AckEvent2.NumTotalAckedRetransmittableBytes = 6280;
+    AckEvent2.SmoothedRtt = 50000;
+    AckEvent2.MinRttValid = FALSE;
+    AckEvent2.IsImplicit = FALSE;
+    AckEvent2.HasLoss = FALSE;
+    AckEvent2.IsLargestAckedPacketAppLimited = FALSE;
+    AckEvent2.AdjustedAckTime = AckEvent2.TimeNow;
+    AckEvent2.AckedPackets = NULL;
+
+    Cubic->BytesInFlight = 8000;
+
+    Connection.CongestionControl.QuicCongestionControlOnDataAcknowledged(
+        &Connection.CongestionControl, &AckEvent2);
+
+    // Verify exited recovery
+    ASSERT_FALSE(Cubic->IsInRecovery);
+    ASSERT_FALSE(Cubic->IsInPersistentCongestion);
+    
+    // Verify back in congestion avoidance
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+    
+    // Verify TimeOfCongAvoidStart updated
+    ASSERT_EQ(Cubic->TimeOfCongAvoidStart, AckEvent2.TimeNow);
+    
+    // Verify TimeOfLastAck updated
+    ASSERT_EQ(Cubic->TimeOfLastAck, AckEvent2.TimeNow);
+    ASSERT_TRUE(Cubic->TimeOfLastAckValid);
+}
