@@ -223,8 +223,9 @@ engine:
         prompt+="Keep adding tests until you get 100% coverage on the files changed in the PR."$'\n\n'
         prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"$'\n\n'
         prompt+="Notes:"$'\n'
-        prompt+="- The changed file list is also in /tmp/changed_files.txt"$'\n'
-        prompt+="- You should run build/test/coverage, check artifacts/coverage/gcovr-coverage.xml, and repeat until target (or you hit the max-iteration limit)."$'\n'
+        prompt+="- The changed file list is also at: /tmp/changed_files.txt"$'\n'
+        prompt+="- You should run build/test with coverage, check ${COVERAGE_XML}, and repeat until the target is reached (or you hit the max-iteration limit)."$'\n'
+        prompt+="- When you are done, create a PR using the workflow safe output."$'\n'
 
         gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
 
