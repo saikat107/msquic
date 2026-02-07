@@ -768,7 +768,7 @@ jobs:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
           GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
         shell: bash
-      - name: Iterate until coverage target
+      - name: Run DeepTest via Copilot CLI
         run: |
           set -euo pipefail
 
@@ -783,6 +783,8 @@ jobs:
           fi
 
           changed_files="$(cat /tmp/changed_files.txt)"
+          echo "Invoking ${AGENT_NAME} for PR #${PR_NUMBER} (Run ID: ${RUN_ID})"
+          CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
           max_iter="${MAX_ITERATIONS}"
           target="${COVERAGE_TARGET}"
 
@@ -907,10 +909,23 @@ jobs:
             fi
 
             echo "--- Invoking agent (${AGENT_NAME}) ---"
-            bullets="$(printf '%s\n' "$changed_files" | sed 's/^/- /')"
+            bullets="$CHANGED_FILES_BULLETS"
             coverage_lines="$(printf '%s' "$last_summary_json" | jq -r '.perFile[] | "- \(.file): \(.percent)%" + (if .found then "" else " (not found in report)" end)')"
 
-            prompt="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
+            prompt="You are generating tests for PR #${PR_NUMBER} in ${GITHUB_REPOSITORY}."$'\n\n'
+            prompt+="Focus on these changed files (filtered, up to ${MAX_FILES}):"$'\n'
+            prompt+="$bullets"$'\n\n'
+            prompt+="Requirements:"$'\n'
+            prompt+="- Follow MsQuic test patterns in src/test/. Prefer adding or updating focused tests for behavior changes."$'\n'
+            prompt+="- Cover error paths and boundary conditions; avoid flaky timing-dependent tests."$'\n'
+            prompt+="- Make minimal changes outside tests unless necessary for testability."$'\n'
+            prompt+="- DeepTest agent should be used to generate test, build and run tests until the coverage reaches 100%."$'\n\n'
+            prompt+="Build, test, coverage inputs (Ubuntu)"$'\n'
+            prompt+="- build = \"pwsh ./scripts/build.ps1\""$'\n'
+            prompt+="- test = \"pwsh ./scripts/test.ps1\""$'\n'
+            prompt+="- coverage_result = \"./artifacts/coverage/gcovr-coverage.xml\""$'\n\n'
+            prompt+="Keep adding tests until you get 100% coverage on the files changed in the PR."$'\n\n'
+            prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
             prompt+=$'\n\n'
             prompt+="Repository: ${GITHUB_REPOSITORY}"$'\n'
             prompt+="PR: #${PR_NUMBER}"$'\n'
@@ -1328,7 +1343,7 @@ jobs:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
         shell: bash
-      - name: Iterate until coverage target
+      - name: Run DeepTest via Copilot CLI
         run: |
           set -euo pipefail
 
@@ -1343,6 +1358,8 @@ jobs:
           fi
 
           changed_files="$(cat /tmp/changed_files.txt)"
+          echo "Invoking ${AGENT_NAME} for PR #${PR_NUMBER} (Run ID: ${RUN_ID})"
+          CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
           max_iter="${MAX_ITERATIONS}"
           target="${COVERAGE_TARGET}"
 
@@ -1467,10 +1484,23 @@ jobs:
             fi
 
             echo "--- Invoking agent (${AGENT_NAME}) ---"
-            bullets="$(printf '%s\n' "$changed_files" | sed 's/^/- /')"
+            bullets="$CHANGED_FILES_BULLETS"
             coverage_lines="$(printf '%s' "$last_summary_json" | jq -r '.perFile[] | "- \(.file): \(.percent)%" + (if .found then "" else " (not found in report)" end)')"
 
-            prompt="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
+            prompt="You are generating tests for PR #${PR_NUMBER} in ${GITHUB_REPOSITORY}."$'\n\n'
+            prompt+="Focus on these changed files (filtered, up to ${MAX_FILES}):"$'\n'
+            prompt+="$bullets"$'\n\n'
+            prompt+="Requirements:"$'\n'
+            prompt+="- Follow MsQuic test patterns in src/test/. Prefer adding or updating focused tests for behavior changes."$'\n'
+            prompt+="- Cover error paths and boundary conditions; avoid flaky timing-dependent tests."$'\n'
+            prompt+="- Make minimal changes outside tests unless necessary for testability."$'\n'
+            prompt+="- DeepTest agent should be used to generate test, build and run tests until the coverage reaches 100%."$'\n\n'
+            prompt+="Build, test, coverage inputs (Ubuntu)"$'\n'
+            prompt+="- build = \"pwsh ./scripts/build.ps1\""$'\n'
+            prompt+="- test = \"pwsh ./scripts/test.ps1\""$'\n'
+            prompt+="- coverage_result = \"./artifacts/coverage/gcovr-coverage.xml\""$'\n\n'
+            prompt+="Keep adding tests until you get 100% coverage on the files changed in the PR."$'\n\n'
+            prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
             prompt+=$'\n\n'
             prompt+="Repository: ${GITHUB_REPOSITORY}"$'\n'
             prompt+="PR: #${PR_NUMBER}"$'\n'

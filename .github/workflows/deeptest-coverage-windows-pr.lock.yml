@@ -814,7 +814,7 @@ jobs:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
           GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
         shell: pwsh
-      - name: Iterate until coverage target
+      - name: Run DeepTest via Copilot CLI
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -910,6 +910,7 @@ jobs:
           }
 
           $changedFiles = Get-Content -Path $changedFilesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          Write-Host "Invoking $($env:AGENT_NAME) for PR #$($env:PR_NUMBER) (Run ID: $($env:RUN_ID))"
           $maxIterations = [int]$env:MAX_ITERATIONS
           $target = [double]$env:COVERAGE_TARGET
           $coverageXml = Join-Path $PWD $env:COVERAGE_XML
@@ -943,6 +944,24 @@ jobs:
             }) -join "`n"
 
             $prompt = @(
+              "You are generating tests for PR #$($env:PR_NUMBER) in $($env:GITHUB_REPOSITORY).",
+              '',
+              "Focus on these changed files (filtered, up to $($env:MAX_FILES)):",
+              $bullets,
+              '',
+              'Requirements:',
+              '- Follow MsQuic test patterns in src/test/. Prefer adding or updating focused tests for behavior changes.',
+              '- Cover error paths and boundary conditions; avoid flaky timing-dependent tests.',
+              '- Make minimal changes outside tests unless necessary for testability.',
+              '- DeepTest agent should be used to generate test, build and run tests until the coverage reaches 100%.',
+              '',
+              'Build, test, coverage inputs (Windows)',
+              '- build = ".\scripts\build.ps1"',
+              "- test = \".\scripts\test.ps1 -Filter $($env:TEST_FILTER) -CodeCoverage\"",
+              '- coverage_result = ".\artifacts\coverage\msquiccoverage.xml"',
+              '',
+              'Keep adding tests until you get 100% coverage on the files changed in the PR.',
+              '',
               $basePrompt.TrimEnd(),
               '',
               "Repository: $($env:GITHUB_REPOSITORY)",
@@ -951,9 +970,6 @@ jobs:
               "Agent: $($env:AGENT_NAME)",
               "Iteration: $currentIteration / $maxIterations",
               "Coverage target: $target% (changed files)",
-              '',
-              'Changed files:',
-              $bullets,
               '',
               'Current changed-files coverage summary:',
               $coverageLines,
@@ -1352,7 +1368,7 @@ jobs:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
         shell: pwsh
-      - name: Iterate until coverage target
+      - name: Run DeepTest via Copilot CLI
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -1448,6 +1464,7 @@ jobs:
           }
 
           $changedFiles = Get-Content -Path $changedFilesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          Write-Host "Invoking $($env:AGENT_NAME) for PR #$($env:PR_NUMBER) (Run ID: $($env:RUN_ID))"
           $maxIterations = [int]$env:MAX_ITERATIONS
           $target = [double]$env:COVERAGE_TARGET
           $coverageXml = Join-Path $PWD $env:COVERAGE_XML
@@ -1481,6 +1498,24 @@ jobs:
             }) -join "`n"
 
             $prompt = @(
+              "You are generating tests for PR #$($env:PR_NUMBER) in $($env:GITHUB_REPOSITORY).",
+              '',
+              "Focus on these changed files (filtered, up to $($env:MAX_FILES)):",
+              $bullets,
+              '',
+              'Requirements:',
+              '- Follow MsQuic test patterns in src/test/. Prefer adding or updating focused tests for behavior changes.',
+              '- Cover error paths and boundary conditions; avoid flaky timing-dependent tests.',
+              '- Make minimal changes outside tests unless necessary for testability.',
+              '- DeepTest agent should be used to generate test, build and run tests until the coverage reaches 100%.',
+              '',
+              'Build, test, coverage inputs (Windows)',
+              '- build = ".\scripts\build.ps1"',
+              "- test = \".\scripts\test.ps1 -Filter $($env:TEST_FILTER) -CodeCoverage\"",
+              '- coverage_result = ".\artifacts\coverage\msquiccoverage.xml"',
+              '',
+              'Keep adding tests until you get 100% coverage on the files changed in the PR.',
+              '',
               $basePrompt.TrimEnd(),
               '',
               "Repository: $($env:GITHUB_REPOSITORY)",
@@ -1489,9 +1524,6 @@ jobs:
               "Agent: $($env:AGENT_NAME)",
               "Iteration: $currentIteration / $maxIterations",
               "Coverage target: $target% (changed files)",
-              '',
-              'Changed files:',
-              $bullets,
               '',
               'Current changed-files coverage summary:',
               $coverageLines,

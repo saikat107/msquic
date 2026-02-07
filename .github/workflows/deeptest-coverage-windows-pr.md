@@ -183,7 +183,7 @@ engine:
         $ErrorActionPreference = 'Stop'
         scripts\prepare-machine.ps1 -ForBuild -Tls $env:TLS -InstallCodeCoverage
 
-    - name: Iterate until coverage target
+    - name: Run DeepTest via Copilot CLI
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
@@ -203,150 +203,45 @@ engine:
         }
         $basePrompt = Get-Content -Path $basePromptPath -Raw
 
-        function Get-CoberturaFileCoverage {
-          param(
-            [Parameter(Mandatory=$true)][string]$XmlPath
-          )
-          if (-not (Test-Path $XmlPath)) { return @{} }
-
-          [xml]$xml = Get-Content -Path $XmlPath
-          $coverage = @{}
-
-          foreach ($package in @($xml.coverage.packages.package)) {
-            foreach ($class in @($package.classes.class)) {
-              $filename = [string]$class.filename
-              if ([string]::IsNullOrWhiteSpace($filename)) { continue }
-              $filename = $filename -replace '\\', '/'
-
-              $linesCovered = 0
-              $linesTotal = 0
-              foreach ($line in @($class.lines.line)) {
-                $linesTotal++
-                if ([int]$line.hits -gt 0) { $linesCovered++ }
-              }
-
-              if (-not $coverage.ContainsKey($filename)) {
-                $coverage[$filename] = [pscustomobject]@{ LinesCovered=$linesCovered; LinesTotal=$linesTotal }
-              } else {
-                $coverage[$filename].LinesCovered += $linesCovered
-                $coverage[$filename].LinesTotal += $linesTotal
-              }
-            }
-          }
-          return $coverage
-        }
-
-        function Resolve-CoverageKey {
-          param(
-            [Parameter(Mandatory=$true)][hashtable]$CoverageByFile,
-            [Parameter(Mandatory=$true)][string]$ChangedFile
-          )
-          $changed = ($ChangedFile -replace '\\', '/').Trim()
-          if ($CoverageByFile.ContainsKey($changed)) { return $changed }
-
-          $candidates = $CoverageByFile.Keys | Where-Object { $_.EndsWith('/' + $changed) }
-          if ($candidates -and $candidates.Count -gt 0) {
-            return ($candidates | Sort-Object Length | Select-Object -First 1)
-          }
-          return $null
-        }
-
-        function Get-ChangedFilesCoverageSummary {
-          param(
-            [Parameter(Mandatory=$true)][string]$XmlPath,
-            [Parameter(Mandatory=$true)][string[]]$ChangedFiles
-          )
-          $covByFile = Get-CoberturaFileCoverage -XmlPath $XmlPath
-          $perFile = @()
-          $sumCovered = 0
-          $sumTotal = 0
-
-          foreach ($f in $ChangedFiles) {
-            $key = if ($covByFile.Count -gt 0) { Resolve-CoverageKey -CoverageByFile $covByFile -ChangedFile $f } else { $null }
-            if ($null -eq $key) {
-              $perFile += [pscustomobject]@{ File=$f; Covered=0; Total=0; Percent=0; Found=$false }
-              continue
-            }
-            $covered = [int]$covByFile[$key].LinesCovered
-            $total = [int]$covByFile[$key].LinesTotal
-            $pct = if ($total -gt 0) { [math]::Round(($covered / $total) * 100, 2) } else { 0 }
-            $perFile += [pscustomobject]@{ File=$f; Covered=$covered; Total=$total; Percent=$pct; Found=$true }
-            $sumCovered += $covered
-            $sumTotal += $total
-          }
-
-          $aggPct = if ($sumTotal -gt 0) { [math]::Round(($sumCovered / $sumTotal) * 100, 2) } else { 0 }
-          return [pscustomobject]@{ AggregatePercent=$aggPct; Covered=$sumCovered; Total=$sumTotal; PerFile=$perFile }
-        }
-
         $changedFiles = Get-Content -Path $changedFilesPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-        $maxIterations = [int]$env:MAX_ITERATIONS
-        $target = [double]$env:COVERAGE_TARGET
-        $coverageXml = Join-Path $PWD $env:COVERAGE_XML
+        $bullets = ($changedFiles | ForEach-Object { "- $_" }) -join "`n"
 
-        $currentIteration = 0
-        $lastSummary = $null
+        Write-Host "Invoking $($env:AGENT_NAME) for PR #$($env:PR_NUMBER) (Run ID: $($env:RUN_ID))"
 
-        while ($true) {
-          Write-Host "--- Build & test (iteration $currentIteration) ---"
-          scripts\build.ps1 -Config $env:CONFIG -Arch $env:ARCH -Tls $env:TLS -CI
-          scripts\test.ps1 -Filter $env:TEST_FILTER -Config $env:CONFIG -Arch $env:ARCH -Tls $env:TLS -CodeCoverage -GHA -GenerateXmlResults -LogProfile Full.Light
+        $prompt = @(
+          "You are generating tests for PR #$($env:PR_NUMBER) in $($env:GITHUB_REPOSITORY).",
+          '',
+          "Focus on these changed files (filtered, up to $($env:MAX_FILES)):",
+          $bullets,
+          '',
+          'Requirements:',
+          '- Follow MsQuic test patterns in src/test/. Prefer adding or updating focused tests for behavior changes.',
+          '- Cover error paths and boundary conditions; avoid flaky timing-dependent tests.',
+          '- Make minimal changes outside tests unless necessary for testability.',
+          '- DeepTest agent should be used to generate test, build and run tests until the coverage reaches 100%.',
+          '',
+          'Build, test, coverage inputs (Windows)',
+          '- build = ".\scripts\build.ps1"',
+          "- test = \".\scripts\test.ps1 -Filter $($env:TEST_FILTER) -CodeCoverage\"",
+          '- coverage_result = ".\artifacts\coverage\msquiccoverage.xml"',
+          '',
+          "Coverage target: $($env:COVERAGE_TARGET)% (changed files)",
+          "Max iterations: $($env:MAX_ITERATIONS)",
+          'Keep adding tests until you get 100% coverage on the files changed in the PR.',
+          '',
+          $basePrompt.TrimEnd(),
+          '',
+          'Notes:',
+          "- The changed file list is also at: $changedFilesPath",
+          "- You should run build/test with coverage, check .\\$($env:COVERAGE_XML), and repeat until the target is reached (or you hit the max-iteration limit).",
+          '- When you are done, create a PR using the workflow safe output.'
+        ) -join "`n"
 
-          $summary = Get-ChangedFilesCoverageSummary -XmlPath $coverageXml -ChangedFiles $changedFiles
-          $lastSummary = $summary
-          Write-Host "Changed-files coverage: $($summary.AggregatePercent)% ($($summary.Covered)/$($summary.Total) covered)"
-          $below = @($summary.PerFile | Where-Object { $_.Percent -lt $target })
-          if (-not $below -or $below.Count -eq 0) {
-            Write-Host "Coverage target reached for changed files (>= $target%)."
-            break
-          }
+        gh copilot --agent $env:AGENT_NAME --allow-all-tools -p "$prompt"
 
-          if ($currentIteration -ge $maxIterations) {
-            Write-Host "Reached max iterations ($maxIterations). Stopping."
-            break
-          }
-
-          $bullets = ($changedFiles | ForEach-Object { "- $_" }) -join "`n"
-          $coverageLines = ($summary.PerFile | Sort-Object Percent | ForEach-Object {
-            $flag = if ($_.Found) { '' } else { ' (not found in report)' }
-            "- $($_.File): $($_.Percent)%$flag"
-          }) -join "`n"
-
-          $prompt = @(
-            $basePrompt.TrimEnd(),
-            '',
-            "Repository: $($env:GITHUB_REPOSITORY)",
-            "PR: #$($env:PR_NUMBER)",
-            "Workflow run: $($env:RUN_ID)",
-            "Agent: $($env:AGENT_NAME)",
-            "Iteration: $currentIteration / $maxIterations",
-            "Coverage target: $target% (changed files)",
-            '',
-            'Changed files:',
-            $bullets,
-            '',
-            'Current changed-files coverage summary:',
-            $coverageLines,
-            '',
-            "Coverage report: $($env:COVERAGE_XML)",
-            '',
-            'Now update/add tests to improve coverage for the files below target. Prefer src/test/ changes. When you are done, create a PR using the workflow safe output.'
-          ) -join "`n"
-
-          Write-Host "--- Invoking agent ($($env:AGENT_NAME)) ---"
-          gh copilot --agent $env:AGENT_NAME --allow-all-tools -p "$prompt"
-
-          $status = git status --porcelain
-          if ([string]::IsNullOrWhiteSpace($status)) {
-            Write-Host 'No changes detected after agent; stopping.'
-            break
-          }
-
-          $currentIteration++
-        }
-
-        if ($lastSummary) {
-          "FINAL_CHANGED_FILES_COVERAGE=$($lastSummary.AggregatePercent)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $status = git status --porcelain
+        if ([string]::IsNullOrWhiteSpace($status)) {
+          Write-Host 'No changes detected after agent.'
         }
 
     - name: Upload coverage artifacts
