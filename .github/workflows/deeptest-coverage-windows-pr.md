@@ -67,7 +67,7 @@ permissions:
 
 strict: false
 
-runs-on: windows-latest
+runs-on: windows-2022
 
 env:
   GH_TOKEN: ${{ github.token }}
