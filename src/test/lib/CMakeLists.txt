@@ -16,6 +16,7 @@ set(SOURCES
     TestConnection.cpp
     TestListener.cpp
     TestStream.cpp
+    TokenValidationTest.cpp
     TestHelpers.h
     TestUtility.h
 )
