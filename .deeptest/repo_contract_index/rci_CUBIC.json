@@ -1,0 +1,94 @@
+{
+  "component": "CUBIC",
+  "source_file": "src/core/cubic.c",
+  "header_file": "src/core/cubic.h",
+  "test_harness": "src/core/unittest/CubicTest.cpp",
+  "public_apis": [
+    {
+      "name": "CubicCongestionControlInitialize",
+      "declaration_location": "src/core/cubic.h:121-124",
+      "definition_location": "src/core/cubic.c:915-940",
+      "signature": "void CubicCongestionControlInitialize(_In_ QUIC_CONGESTION_CONTROL* Cc, _In_ const QUIC_SETTINGS_INTERNAL* Settings)",
+      "description": "Initializes CUBIC congestion control instance",
+      "preconditions": ["Cc not NULL", "Cc part of valid QUIC_CONNECTION", "Settings not NULL", "InitialWindowPackets > 0", "Paths[0] has valid MTU"],
+      "postconditions": ["Function pointers set", "CongestionWindow initialized", "SlowStartThreshold = UINT32_MAX", "HyStartState = NOT_STARTED"],
+      "side_effects": ["Logs via QuicConnLogOutFlowStats and QuicConnLogCubic"],
+      "error_contract": "None (void return)",
+      "thread_safety": "IRQL <= DISPATCH_LEVEL, not thread-safe for same Cc"
+    }
+  ],
+  "function_pointer_apis": [
+    "CubicCongestionControlCanSend",
+    "CubicCongestionControlSetExemption",
+    "CubicCongestionControlReset",
+    "CubicCongestionControlGetSendAllowance",
+    "CubicCongestionControlOnDataSent",
+    "CubicCongestionControlOnDataInvalidated",
+    "CubicCongestionControlOnDataAcknowledged",
+    "CubicCongestionControlOnDataLost",
+    "CubicCongestionControlOnEcn",
+    "CubicCongestionControlOnSpuriousCongestionEvent",
+    "CubicCongestionControlGetNetworkStatistics",
+    "CubicCongestionControlGetExemptions",
+    "CubicCongestionControlGetBytesInFlightMax",
+    "CubicCongestionControlIsAppLimited",
+    "CubicCongestionControlSetAppLimited",
+    "CubicCongestionControlGetCongestionWindow",
+    "CubicCongestionControlLogOutFlowStatus"
+  ],
+  "state_machines": [
+    {
+      "name": "Recovery State",
+      "states": ["Not In Recovery", "In Recovery"],
+      "transitions": [
+        {"from": "Not In Recovery", "to": "In Recovery", "trigger": "OnCongestionEvent or OnEcn"},
+        {"from": "In Recovery", "to": "Not In Recovery", "trigger": "ACK with LargestAck > RecoverySentPacketNumber"}
+      ]
+    },
+    {
+      "name": "HyStart State",
+      "states": ["HYSTART_NOT_STARTED", "HYSTART_ACTIVE", "HYSTART_DONE"],
+      "transitions": [
+        {"from": "NOT_STARTED", "to": "ACTIVE", "trigger": "Conditions met during slow start"},
+        {"from": "ACTIVE", "to": "DONE", "trigger": "RTT increase detected"},
+        {"from": "Any", "to": "NOT_STARTED", "trigger": "Reset called"}
+      ]
+    },
+    {
+      "name": "Growth Mode",
+      "states": ["Slow Start", "Congestion Avoidance"],
+      "determination": "CongestionWindow < SlowStartThreshold"
+    }
+  ],
+  "invariants": {
+    "object": [
+      "InitialWindowPackets > 0",
+      "CongestionWindow >= DatagramPayloadLength",
+      "BytesInFlight <= BytesInFlightMax (except transient)",
+      "SlowStartThreshold > 0",
+      "HyStartState in {NOT_STARTED, ACTIVE, DONE}",
+      "CWndSlowStartGrowthDivisor >= 1"
+    ],
+    "environment": [
+      "QUIC_CONNECTION properly initialized",
+      "Path[0] has valid MTU",
+      "No concurrent access without synchronization",
+      "IRQL <= DISPATCH_LEVEL",
+      "No memory allocation needed"
+    ]
+  },
+  "critical_coverage_paths": [
+    "Initialization with various parameters",
+    "Slow start window growth",
+    "Congestion avoidance CUBIC formula",
+    "Congestion event window reduction",
+    "Recovery exit after ACK",
+    "Spurious loss recovery",
+    "HyStart state transitions",
+    "Pacing calculations",
+    "Exemptions handling",
+    "Persistent congestion",
+    "ECN handling",
+    "Boundary and edge cases"
+  ]
+}
