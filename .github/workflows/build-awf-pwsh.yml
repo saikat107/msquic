@@ -18,10 +18,13 @@ jobs:
       packages: write
 
     steps:
-      - name: Download AWF Dockerfile and scripts
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download AWF scripts
+        working-directory: containers/awf-pwsh
         run: |
           BASE_URL="https://raw.githubusercontent.com/github/gh-aw-firewall/main/containers/agent"
-          curl -fsSLO "$BASE_URL/Dockerfile"
           curl -fsSLO "$BASE_URL/setup-iptables.sh"
           curl -fsSLO "$BASE_URL/entrypoint.sh"
           curl -fsSLO "$BASE_URL/pid-logger.sh"
@@ -37,7 +40,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: containers/awf-pwsh
           push: true
           build-args: |
             BASE_IMAGE=ghcr.io/catthehacker/ubuntu:runner-22.04
