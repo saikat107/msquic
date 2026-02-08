@@ -1,6 +1,6 @@
 # Custom AWF container with PowerShell support
-# Uses ubuntu-slim runner which has pwsh pre-installed
-FROM ghcr.io/actions/runner-images:ubuntu-slim
+# Base image from catthehacker with pwsh pre-installed
+FROM ghcr.io/catthehacker/ubuntu:pwsh-latest
 
 # Switch to root for package installation
 USER root
@@ -19,20 +19,8 @@ RUN pwsh --version
 # Create non-root user
 ARG USER_UID=1000
 ARG USER_GID=1000
-RUN if ! getent group awfuser >/dev/null 2>&1; then \
-      if ! getent group ${USER_GID} >/dev/null 2>&1; then \
-        groupadd -g ${USER_GID} awfuser; \
-      else \
-        groupadd awfuser; \
-      fi; \
-    fi && \
-    if ! id -u awfuser >/dev/null 2>&1; then \
-      if ! getent passwd ${USER_UID} >/dev/null 2>&1; then \
-        useradd -u ${USER_UID} -g awfuser -m -s /bin/bash awfuser; \
-      else \
-        useradd -g awfuser -m -s /bin/bash awfuser; \
-      fi; \
-    fi && \
+RUN groupadd -g ${USER_GID} awfuser || groupadd awfuser && \
+    useradd -u ${USER_UID} -g awfuser -m -s /bin/bash awfuser || useradd -g awfuser -m -s /bin/bash awfuser && \
     mkdir -p /home/awfuser/.copilot/logs && \
     chown -R awfuser:awfuser /home/awfuser
 
