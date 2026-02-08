@@ -2,6 +2,12 @@ name: Test AWF with PowerShell
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - meiyang/awfpwsh
+    paths:
+      - 'scripts/test-pwsh.ps1'
+      - '.github/workflows/test-awf-pwsh.yml'
 
 jobs:
   test-pwsh:
