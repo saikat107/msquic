@@ -42,8 +42,6 @@ jobs:
         with:
           context: containers/awf-pwsh
           push: true
-          build-args: |
-            BASE_IMAGE=ghcr.io/catthehacker/ubuntu:runner-22.04
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v0.13.12
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest

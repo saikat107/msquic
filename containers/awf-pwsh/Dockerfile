@@ -1,12 +1,11 @@
 # Custom AWF container with PowerShell support
-# Based on official AWF Dockerfile but adapted for runner base image
-ARG BASE_IMAGE=ghcr.io/catthehacker/ubuntu:runner-22.04
-FROM ${BASE_IMAGE}
+# Uses ubuntu-slim runner which has pwsh pre-installed
+FROM ghcr.io/actions/runner-images:ubuntu-slim
 
 # Switch to root for package installation
 USER root
 
-# Install required packages (most already exist in runner images)
+# Install additional packages needed by AWF
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     iptables \
