@@ -1,0 +1,17 @@
+name: Test AWF with PowerShell
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-pwsh:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/saikat107/awf-pwsh:latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test PowerShell
+        run: pwsh scripts/test-pwsh.ps1
