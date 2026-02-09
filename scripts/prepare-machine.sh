@@ -202,7 +202,7 @@ initialize_submodules() {
     if [[ -z "$TLS" ]]; then
         # Try to get TLS from get-buildconfig.ps1 if PowerShell is available
         if command -v pwsh &> /dev/null; then
-            TLS=$(pwsh "$SCRIPT_DIR/get-buildconfig.ps1" -Tls "$TLS" | grep -oP 'Tls\s*:\s*\K\w+' || echo "openssl")
+            TLS=$(pwsh "$SCRIPT_DIR/get-buildconfig.ps1" -Tls "$TLS" 2>/dev/null | sed -n 's/.*Tls[[:space:]]*:[[:space:]]*\([a-zA-Z]*\).*/\1/p' || echo "openssl")
         else
             TLS="openssl"
         fi
