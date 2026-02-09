@@ -116,6 +116,22 @@ typedef struct QUIC_CONGESTION_CONTROL_CUBIC {
 
 } QUIC_CONGESTION_CONTROL_CUBIC;
 
+//
+// Standalone helper for ad-hoc CUBIC state logging.
+//
+typedef struct QUIC_CUBIC_LOG_STATE {
+    uint32_t CongestionWindow;     // bytes
+    uint32_t SlowStartThreshold;   // bytes
+    uint32_t BytesInFlight;        // bytes
+} QUIC_CUBIC_LOG_STATE;
+
+_IRQL_requires_max_(DISPATCH_LEVEL)
+void
+CubicCongestionControlGetLogState(
+    _In_ const QUIC_CONGESTION_CONTROL* Cc,
+    _Out_ QUIC_CUBIC_LOG_STATE* State
+    );
+
 _IRQL_requires_max_(DISPATCH_LEVEL)
 void
 CubicCongestionControlInitialize(

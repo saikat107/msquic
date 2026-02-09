@@ -858,6 +858,19 @@ CubicCongestionControlLogOutFlowStatus(
         Path->OneWayDelay);
 }
 
+_IRQL_requires_max_(DISPATCH_LEVEL)
+void
+CubicCongestionControlGetLogState(
+    _In_ const QUIC_CONGESTION_CONTROL* Cc,
+    _Out_ QUIC_CUBIC_LOG_STATE* State
+    )
+{
+    const QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Cc->Cubic;
+    State->CongestionWindow = Cubic->CongestionWindow;
+    State->SlowStartThreshold = Cubic->SlowStartThreshold;
+    State->BytesInFlight = Cubic->BytesInFlight;
+}
+
 uint32_t
 CubicCongestionControlGetBytesInFlightMax(
     _In_ const QUIC_CONGESTION_CONTROL* Cc
