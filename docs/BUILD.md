@@ -104,8 +104,14 @@ After installing .NET \[Core\] SDK, you may need to restart your terminal.
 
 For the very first time you build, it's recommend to make sure you have all the dependencies installed. You can ensure this by running:
 
+**Windows and Linux (with PowerShell):**
 ```PowerShell
 ./scripts/prepare-machine.ps1
+```
+
+**Linux (native bash):**
+```bash
+./scripts/prepare-machine.sh
 ```
 
 Note at minimum CMake 3.20 on windows and 3.16 on other platforms is required. Instructions for installing the newest version on Ubuntu can be found here. https://apt.kitware.com/. The prepare-machine script will not do this for you.
@@ -169,7 +175,7 @@ The following section details how to build MsQuic purely with CMake commands.
 
 > **Please note** that since using CMake directly is not the recommended way of building MsQuic, it's likely that these instructions may fall out of date more often than the **Building with PowerShell** ones.
 
-Note that you will need to disable logging if building with CMake exclusively. Logging enabled requires .NET Core and at least the configuration from prepare-machine.ps1 in order to build.
+Note that you will need to disable logging if building with CMake exclusively. Logging enabled requires .NET Core and at least the configuration from `prepare-machine.ps1` (or `prepare-machine.sh` on Linux) in order to build.
 
 Note at minimum CMake 3.16 is required. Instructions for installing a the newest version on Ubuntu can be found here. https://apt.kitware.com/
 
@@ -203,7 +209,9 @@ sudo dnf install libatomic
 #### Linux XDP
 Linux XDP is experimentally supported on amd64 && Ubuntu 22.04LTS.
 Commands below install dependencies and setup runtime environment.
-**<span style="color:red;">WARN: This might break your system by installing Ubuntu 24.04LTS packages on ubuntu 22.04.Do not run on production environment and need to understand the side effect. You can workaround this prompt by `-ForceXdpInstall` </span>**
+**<span style="color:red;">WARN: This might break your system by installing Ubuntu 24.04LTS packages on ubuntu 22.04.Do not run on production environment and need to understand the side effect. You can workaround this prompt by `-ForceXdpInstall` (PowerShell) or `--force-xdp-install` (bash). </span>**
+
+**With PowerShell:**
 ```sh
 $ pwsh ./scripts/prepare-machine.ps1 -UseXdp
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WARN !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -217,7 +225,21 @@ $ pwsh ./scripts/prepare-machine.ps1 -UseXdp -ForceXdpInstall
 $ pwsh ./scripts/build.ps1 -UseXdp
 ```
 
-`./scripts/prepare-machine.ps1` internally does the below commands. This might break your environment.
+**With bash:**
+```sh
+$ ./scripts/prepare-machine.sh --use-xdp
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! WARN !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+Linux XDP installs dependencies from Ubuntu 24.04 packages, which may affect your environment
+You need to understand the impact of this on your environment before proceeding
+Type 'YES' to proceed: YES
+
+or
+
+$ ./scripts/prepare-machine.sh --use-xdp --force-xdp-install
+$ pwsh ./scripts/build.ps1 -UseXdp
+```
+
+`./scripts/prepare-machine.ps1` and `./scripts/prepare-machine.sh` internally do the below commands. This might break your environment.
 ```sh
 # for libxdp v1.4.2 on Ubuntu 22.04. Ubuntu 24.04 doesn't need this step
 sudo apt-add-repository "deb http://mirrors.kernel.org/ubuntu noble main" -y
