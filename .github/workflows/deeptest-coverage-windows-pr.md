@@ -70,6 +70,7 @@ strict: false
 runs-on: windows-2022
 
 env:
+  DOCKER_DEFAULT_PLATFORM: linux/amd64
   GH_TOKEN: ${{ github.token }}
   COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
   RUN_ID: ${{ github.run_id }}

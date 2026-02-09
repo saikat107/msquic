@@ -97,6 +97,7 @@ concurrency:
 run-name: "Deeptest Coverage Windows Pr"
 
 env:
+  DOCKER_DEFAULT_PLATFORM: linux/amd64
   AGENT_NAME: ${{ github.event.inputs.agent_name || 'DeepTest' }}
   ARCH: ${{ github.event.inputs.arch || 'x64' }}
   CONFIG: ${{ github.event.inputs.config || 'Release' }}
