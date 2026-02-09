@@ -70,7 +70,6 @@ strict: false
 runs-on: windows-2022
 
 env:
-  DOCKER_DEFAULT_PLATFORM: linux/amd64
   GH_TOKEN: ${{ github.token }}
   COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
   RUN_ID: ${{ github.run_id }}
@@ -235,7 +234,7 @@ engine:
           'Notes:',
           "- The changed file list is also at: $changedFilesPath",
           "- You should run build/test with coverage, check .\\$($env:COVERAGE_XML), and repeat until the target is reached (or you hit the max-iteration limit).",
-          '- When you are done, create a PR using the workflow safe output.'
+          '- Do not create a PR yourself; this workflow will open a draft PR if there are changes.'
         ) -join "`n"
 
         gh copilot --agent $env:AGENT_NAME --allow-all-tools -p "$prompt"
