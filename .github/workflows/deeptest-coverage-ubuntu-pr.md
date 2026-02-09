@@ -153,6 +153,19 @@ engine:
           exit 1
         fi
 
+        total_count="$(wc -l < /tmp/changed_files_all.txt | tr -d ' ')"
+        echo "Total changed files returned by API: ${total_count}" 
+        echo "INCLUDE_REGEX=${INCLUDE_REGEX}"
+        echo "EXCLUDE_REGEX=${EXCLUDE_REGEX}"
+
+        src_sample="$(printf '%s\n' "$ALL_FILES" | grep -E '^src/' | head -n 20 || true)"
+        if [ -z "$src_sample" ]; then
+          echo "No paths under src/ were found in this PR's changed files."
+        else
+          echo "Sample src/ files in PR (first 20):"
+          printf '%s\n' "$src_sample"
+        fi
+
         FILTERED_FILES="$(printf '%s\n' "$ALL_FILES" \
           | grep -E "$INCLUDE_REGEX" \
           | grep -Ev "$EXCLUDE_REGEX" \
