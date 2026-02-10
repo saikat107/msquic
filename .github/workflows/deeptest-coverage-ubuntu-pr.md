@@ -275,7 +275,7 @@ engine:
           echo "No file changes detected after DeepTest agent."
           echo "Calling noop safe output."
           prompt="There are no file changes to commit. Please call the noop safe output tool with message: 'No test changes were generated for PR #${PR_NUMBER}.'"
-          gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
+          gh copilot --allow-all-tools -p "$prompt"
           exit 0
         fi
 
@@ -310,7 +310,7 @@ engine:
         prompt+=$'\n'"body: ${body}"
         prompt+=$'\n\n'"After calling create_pull_request, call the noop tool with message: 'PR creation requested for run #${RUN_ID}'."
         prompt+=$'\n'"Do NOTHING else. Do not generate code. Do not analyze files."
-        gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
+        gh copilot --allow-all-tools -p "$prompt"
 
     - name: Upload coverage artifacts
       uses: actions/upload-artifact@v4
