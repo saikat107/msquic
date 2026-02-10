@@ -270,14 +270,10 @@ engine:
       run: |
         set -euo pipefail
 
-        if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
-          echo "COPILOT_GITHUB_TOKEN secret is required" >&2
-          exit 1
-        fi
-
-        # Check whether the agent produced any file changes at all
+        # ── Check whether the agent produced any file changes at all ──
         if ! git status --porcelain | grep -q .; then
-          echo "No changes detected; requesting noop safe output."
+          echo "No file changes detected after DeepTest agent."
+          echo "Calling noop safe output."
           prompt="There are no file changes to commit. Please call the noop safe output tool with message: 'No test changes were generated for PR #${PR_NUMBER}.'"
           gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
           exit 0
@@ -291,7 +287,7 @@ engine:
         fi
 
         # ── PR metadata ──
-        title="[DeepTest+Coverage Ubuntu Run #${RUN_ID}] Add tests for PR #${PR_NUMBER}"
+        title="Add tests for PR #${PR_NUMBER}"
         changed_list="$(sed 's/^/- /' /tmp/changed_files.txt 2>/dev/null || echo '(none)')"
         coverage_info="$(cat /tmp/coverage_summary.json 2>/dev/null || echo 'Coverage summary not available.')"
 
@@ -301,13 +297,19 @@ engine:
         body+="### Newly generated / modified test files\n${new_files_list}\n\n"
         body+="### Coverage summary\n\`\`\`json\n${coverage_info}\n\`\`\`\n"
 
-        prompt="IMPORTANT: You MUST use the 'create_pull_request' safe output tool to create a pull request with the newly generated test files on a new branch."
-        prompt+=$'\n'"Do NOT use 'gh pr create', 'git push', or any direct GitHub CLI commands."
-        prompt+=$'\n'"Do NOT attempt to commit or push changes yourself — the safe output infrastructure handles that."
-        prompt+=$'\n\n'"Call the create_pull_request safe output tool with these parameters:"
-        prompt+=$'\n'"- title: ${title}"
-        prompt+=$'\n'"- body: ${body}"
-        prompt+=$'\n\n'"The infrastructure will automatically create a new branch, commit all workspace changes (the newly generated test files), and open a draft PR."
+        echo "Requesting PR creation via safe output tool..."
+        echo "Title: $title"
+        echo "New test files:"
+        echo "$new_files_list"
+
+        prompt="STOP. DO NOT generate tests. DO NOT read source files. DO NOT build code. DO NOT use any skill."
+        prompt+=$'\n'"Your ONLY task right now is to call the create_pull_request safe output tool."
+        prompt+=$'\n'"Do NOT use gh pr create. Do NOT use git push. Do NOT commit anything."
+        prompt+=$'\n\n'"Call the create_pull_request tool with EXACTLY these parameters:"
+        prompt+=$'\n'"title: ${title}"
+        prompt+=$'\n'"body: ${body}"
+        prompt+=$'\n\n'"After calling create_pull_request, call the noop tool with message: 'PR creation requested for run #${RUN_ID}'."
+        prompt+=$'\n'"Do NOTHING else. Do not generate code. Do not analyze files."
         gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
 
     - name: Upload coverage artifacts

@@ -35,5 +35,9 @@ When you believe the work is complete
 - Your final output should be the newly generated or modified test files written to the workspace.
 - Do NOT create a PR yourself. Do NOT run `gh pr create` or `git push`. Do NOT commit changes.
 - The workflow will automatically detect your generated test files and create a PR on a new branch in a separate step.
-- When explicitly requested by the workflow in the PR-creation step, use the `create_pull_request` safe output tool (not the GitHub CLI).
-- PR content should include the workflow run id and a short summary of what changed and how coverage improved.
+
+CRITICAL: Step separation
+- The workflow has TWO separate steps: (1) "Run DeepTest agent" and (2) "Request PR creation via safe output".
+- In step 1 (test generation): Generate tests, build, measure coverage, iterate. Do NOT create PRs.
+- In step 2 (PR creation): ONLY call the `create_pull_request` safe output tool. Do NOT generate tests, do NOT read source files, do NOT build code, do NOT use any skill.
+- If you are asked to call `create_pull_request`, that means you are in step 2. Do NOTHING except call that tool.

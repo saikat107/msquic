@@ -21,7 +21,7 @@
 #
 # Generate tests for PR-changed files targeting 95% coverage (Ubuntu + gcovr)
 #
-# frontmatter-hash: 8706fe52a55edd3a4b414a0a559655624f6c39d00d60d9edae209e2e5711d8ba
+# frontmatter-hash: 2d8f93169bb016280474818802f7d5f516dba504c3aa2e8293e820c5cb117573
 
 name: "Deeptest Coverage Ubuntu Pr"
 "on":
@@ -861,7 +861,6 @@ jobs:
             exit 1
           fi
 
-          # Check whether the agent produced any file changes at all
           if ! git status --porcelain | grep -q .; then
             echo "No changes detected; requesting noop safe output."
             prompt="There are no file changes to commit. Please call the noop safe output tool with message: 'No test changes were generated for PR #${PR_NUMBER}.'"
@@ -880,20 +879,9 @@ jobs:
           title="[DeepTest+Coverage Ubuntu Run #${RUN_ID}] Add tests for PR #${PR_NUMBER}"
           changed_list="$(sed 's/^/- /' /tmp/changed_files.txt 2>/dev/null || echo '(none)')"
           coverage_info="$(cat /tmp/coverage_summary.json 2>/dev/null || echo 'Coverage summary not available.')"
+          body="Generated/updated tests for PR #${PR_NUMBER}.\n\nChanged files considered:\n${changed_list}\n\nCoverage summary:\n${coverage_info}"
 
-          body="## DeepTest Coverage — Auto-generated Tests\n\n"
-          body+="Generated tests targeting ${COVERAGE_TARGET}% line coverage for PR #${PR_NUMBER}.\n\n"
-          body+="### Source files analysed\n${changed_list}\n\n"
-          body+="### Newly generated / modified test files\n${new_files_list}\n\n"
-          body+="### Coverage summary\n\`\`\`json\n${coverage_info}\n\`\`\`\n"
-
-          prompt="IMPORTANT: You MUST use the 'create_pull_request' safe output tool to create a pull request with the newly generated test files on a new branch."
-          prompt+=$'\n'"Do NOT use 'gh pr create', 'git push', or any direct GitHub CLI commands."
-          prompt+=$'\n'"Do NOT attempt to commit or push changes yourself — the safe output infrastructure handles that."
-          prompt+=$'\n\n'"Call the create_pull_request safe output tool with these parameters:"
-          prompt+=$'\n'"- title: ${title}"
-          prompt+=$'\n'"- body: ${body}"
-          prompt+=$'\n\n'"The infrastructure will automatically create a new branch, commit all workspace changes (the newly generated test files), and open a draft PR."
+          prompt="IMPORTANT: You MUST use the 'create_pull_request' safe output tool to create a pull request. Do NOT use 'gh pr create' or 'git push' or any direct GitHub CLI commands.\n\nCall the create_pull_request safe output tool with these parameters:\n- title: ${title}\n- body: ${body}\n\nThis is a workflow safe output — the infrastructure will handle the actual PR creation."
           gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
         env:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
@@ -1371,7 +1359,6 @@ jobs:
             exit 1
           fi
 
-          # Check whether the agent produced any file changes at all
           if ! git status --porcelain | grep -q .; then
             echo "No changes detected; requesting noop safe output."
             prompt="There are no file changes to commit. Please call the noop safe output tool with message: 'No test changes were generated for PR #${PR_NUMBER}.'"
@@ -1390,20 +1377,9 @@ jobs:
           title="[DeepTest+Coverage Ubuntu Run #${RUN_ID}] Add tests for PR #${PR_NUMBER}"
           changed_list="$(sed 's/^/- /' /tmp/changed_files.txt 2>/dev/null || echo '(none)')"
           coverage_info="$(cat /tmp/coverage_summary.json 2>/dev/null || echo 'Coverage summary not available.')"
+          body="Generated/updated tests for PR #${PR_NUMBER}.\n\nChanged files considered:\n${changed_list}\n\nCoverage summary:\n${coverage_info}"
 
-          body="## DeepTest Coverage — Auto-generated Tests\n\n"
-          body+="Generated tests targeting ${COVERAGE_TARGET}% line coverage for PR #${PR_NUMBER}.\n\n"
-          body+="### Source files analysed\n${changed_list}\n\n"
-          body+="### Newly generated / modified test files\n${new_files_list}\n\n"
-          body+="### Coverage summary\n\`\`\`json\n${coverage_info}\n\`\`\`\n"
-
-          prompt="IMPORTANT: You MUST use the 'create_pull_request' safe output tool to create a pull request with the newly generated test files on a new branch."
-          prompt+=$'\n'"Do NOT use 'gh pr create', 'git push', or any direct GitHub CLI commands."
-          prompt+=$'\n'"Do NOT attempt to commit or push changes yourself — the safe output infrastructure handles that."
-          prompt+=$'\n\n'"Call the create_pull_request safe output tool with these parameters:"
-          prompt+=$'\n'"- title: ${title}"
-          prompt+=$'\n'"- body: ${body}"
-          prompt+=$'\n\n'"The infrastructure will automatically create a new branch, commit all workspace changes (the newly generated test files), and open a draft PR."
+          prompt="IMPORTANT: You MUST use the 'create_pull_request' safe output tool to create a pull request. Do NOT use 'gh pr create' or 'git push' or any direct GitHub CLI commands.\n\nCall the create_pull_request safe output tool with these parameters:\n- title: ${title}\n- body: ${body}\n\nThis is a workflow safe output — the infrastructure will handle the actual PR creation."
           gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
         env:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
