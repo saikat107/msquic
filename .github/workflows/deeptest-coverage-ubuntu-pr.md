@@ -1,7 +1,8 @@
 ---
-description: Iteratively generate tests for PR-changed files until a coverage target is reached (Ubuntu + gcovr)
+description: Generate tests for PR-changed files targeting 95% coverage (Ubuntu + gcovr)
 on:
   pull_request:
+    branches: [master]
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
@@ -22,7 +23,7 @@ on:
       coverage_target:
         description: "Target line coverage percentage for the changed C/C++ files"
         required: false
-        default: "90"
+        default: "95"
         type: string
       config:
         description: "Build/test configuration (Debug recommended for coverage)"
@@ -71,7 +72,7 @@ env:
   PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
   AGENT_NAME: ${{ github.event.inputs.agent_name || 'DeepTest' }}
   MAX_ITERATIONS: ${{ github.event.inputs.max_iterations || '5' }}
-  COVERAGE_TARGET: ${{ github.event.inputs.coverage_target || '90' }}
+  COVERAGE_TARGET: ${{ github.event.inputs.coverage_target || '95' }}
   CONFIG: ${{ github.event.inputs.config || 'Debug' }}
   ARCH: ${{ github.event.inputs.arch || 'x64' }}
   TLS: ${{ github.event.inputs.tls || 'openssl' }}
@@ -169,7 +170,7 @@ engine:
         FILTERED_FILES="$(printf '%s\n' "$ALL_FILES" \
           | grep -E "$INCLUDE_REGEX" \
           | grep -Ev "$EXCLUDE_REGEX" \
-          | grep -E '\\.(c|cpp|py)$' \
+          | grep -E '\.(c|cpp|py)$' \
           | head -n "$MAX_FILES" || true)"
 
         if [ -z "$FILTERED_FILES" ]; then
@@ -201,7 +202,7 @@ engine:
         set -euo pipefail
         pwsh ./scripts/prepare-machine.ps1 -ForBuild -Tls "$TLS"
 
-    - name: Iterate DeepTest + coverage to target
+    - name: Run DeepTest agent
       shell: bash
       run: |
         set -euo pipefail
@@ -211,181 +212,42 @@ engine:
           exit 1
         fi
 
-        if [ ! -f .github/agentics/deeptest-coverage-ubuntu-pr.md ]; then
-          echo "Missing base prompt file: .github/agentics/deeptest-coverage-ubuntu-pr.md" >&2
-          exit 1
-        fi
-
-        if [ ! -f /tmp/changed_files.txt ]; then
-          echo "Missing changed file list: /tmp/changed_files.txt" >&2
-          exit 1
-        fi
-
-        if [ ! -s /tmp/changed_files.txt ]; then
-          echo "No matching .c/.cpp/.py files were selected; skipping DeepTest + build/test/coverage."
+        if [ ! -f /tmp/changed_files.txt ] || [ ! -s /tmp/changed_files.txt ]; then
+          echo "No matching .c/.cpp/.py files were selected; skipping DeepTest."
           printf '{"skipped": true, "reason": "no matching .c/.cpp/.py files"}\n' > /tmp/coverage_summary.json
           exit 0
         fi
 
-        changed_c_files="$(grep -E '\\.(c|cpp)$' /tmp/changed_files.txt || true)"
+        CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
 
-        i=1
-        while [ "$i" -le "$MAX_ITERATIONS" ]; do
-          echo "=== Iteration ${i}/${MAX_ITERATIONS} (target: ${COVERAGE_TARGET}%) ==="
+        prompt="You are generating tests for PR #${PR_NUMBER} in ${GITHUB_REPOSITORY}."
+        prompt+=$'\n\n'"Coverage target: ${COVERAGE_TARGET}% line coverage on the changed C/C++ files."
+        prompt+=$'\n'"Max iterations: ${MAX_ITERATIONS} (stop early once the target is met)."
+        prompt+=$'\n\n'"Changed files (filtered .c/.cpp/.py from this PR):"
+        prompt+=$'\n'"${CHANGED_FILES_BULLETS}"
+        prompt+=$'\n\n'"Build/test/coverage commands (Ubuntu):"
+        prompt+=$'\n'"- Build with coverage: CC=gcc CXX=g++ CFLAGS='--coverage -O0 -g' CXXFLAGS='--coverage -O0 -g' LDFLAGS='--coverage' pwsh ./scripts/build.ps1 -Platform linux -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -DisablePerf -DisableTools -CI"
+        prompt+=$'\n'"- Run tests: pwsh ./scripts/test.ps1 -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -GHA -LogProfile Full.Light"
+        prompt+=$'\n'"- Generate coverage XML: gcovr --root . --object-directory build/linux/${ARCH}_${TLS} --filter '^src/' --exclude '^src/test/' --exclude '^submodules/' --exclude '^src/generated/' --cobertura-pretty --output ${COVERAGE_XML}"
+        prompt+=$'\n\n'"Workflow:"
+        prompt+=$'\n'"1. Generate or improve tests for the changed files to increase coverage."
+        prompt+=$'\n'"2. Build with coverage instrumentation using the commands above."
+        prompt+=$'\n'"3. Run the test suite."
+        prompt+=$'\n'"4. Generate the Cobertura XML coverage report."
+        prompt+=$'\n'"5. Parse the report to compute line coverage for the changed C/C++ files."
+        prompt+=$'\n'"6. If coverage < ${COVERAGE_TARGET}%, go back to step 1 and add more tests."
+        prompt+=$'\n'"7. Repeat until coverage >= ${COVERAGE_TARGET}% or you have done ${MAX_ITERATIONS} iterations."
+        prompt+=$'\n\n'"Constraints:"
+        prompt+=$'\n'"- Prefer adding tests under src/test/. Avoid changing production code unless required for testability."
+        prompt+=$'\n'"- Keep tests deterministic; avoid flaky timing-dependent assertions."
+        prompt+=$'\n'"- Do NOT create a PR; the workflow will handle that."
+        prompt+=$'\n\n'
+        if [ -f .github/agentics/deeptest-coverage-ubuntu-pr.md ]; then
+          prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
+        fi
 
-          CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
-          prompt="You are generating tests for PR #${PR_NUMBER} in ${GITHUB_REPOSITORY}."$'\n\n'
-          prompt+="Iteration ${i} of ${MAX_ITERATIONS}."$'\n'
-          prompt+="Coverage target: ${COVERAGE_TARGET}% (changed C/C++ files)."$'\n\n'
-          prompt+="Focus on these changed files (filtered, up to ${MAX_FILES}):"$'\n'
-          prompt+="$CHANGED_FILES_BULLETS"$'\n\n'
-          if [ -f /tmp/coverage_summary.json ]; then
-            prompt+="Current coverage summary (from previous iteration):"$'\n'
-            prompt+="$(cat /tmp/coverage_summary.json)"$'\n\n'
-          fi
-          prompt+="Requirements:"$'\n'
-          prompt+="- First, use DeepTest skills to generate or improve tests."$'\n'
-          prompt+="- Prefer changes under src/test/. Avoid changing production code unless required for testability."$'\n'
-          prompt+="- Keep tests deterministic; avoid flaky timing-dependent assertions."$'\n'
-          prompt+="- Do NOT create a PR; the workflow will create a branch and PR if there are changes."$'\n\n'
-          prompt+="Build, test, coverage inputs (Ubuntu):"$'\n'
-          prompt+="- build = \"pwsh ./scripts/build.ps1 -Platform linux -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -DisablePerf -DisableTools -CI\""$'\n'
-          prompt+="- test = \"pwsh ./scripts/test.ps1 -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -GHA -LogProfile Full.Light\""$'\n'
-          prompt+="- coverage_result = \"./${COVERAGE_XML}\""$'\n\n'
-          prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"$'\n'
-
-          echo "Invoking ${AGENT_NAME} (iteration ${i})"
-          gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
-
-          echo "Building with coverage instrumentation"
-          export CC=gcc
-          export CXX=g++
-          export CFLAGS="--coverage -O0 -g"
-          export CXXFLAGS="--coverage -O0 -g"
-          export LDFLAGS="--coverage"
-          pwsh ./scripts/build.ps1 -Platform linux -Config "$CONFIG" -Arch "$ARCH" -Tls "$TLS" -DisablePerf -DisableTools -CI
-
-          echo "Running tests"
-          pwsh ./scripts/test.ps1 -Config "$CONFIG" -Arch "$ARCH" -Tls "$TLS" -GHA -LogProfile Full.Light
-
-          echo "Generating coverage report (gcovr)"
-          mkdir -p artifacts/coverage
-          OBJDIR="build/linux/${ARCH}_${TLS}"
-          gcovr --root . \
-            --object-directory "$OBJDIR" \
-            --filter '^src/' \
-            --exclude '^src/test/' \
-            --exclude '^submodules/' \
-            --exclude '^src/generated/' \
-            --cobertura-pretty \
-            --output "${COVERAGE_XML}"
-
-          echo "Computing changed-files coverage from Cobertura XML"
-          python3 - <<'PY'
-          import json
-          import os
-          import sys
-          import xml.etree.ElementTree as ET
-
-          coverage_xml = os.environ.get('COVERAGE_XML', 'artifacts/coverage/gcovr-coverage.xml')
-          target = float(os.environ.get('COVERAGE_TARGET', '90'))
-
-          changed_files_path = '/tmp/changed_files.txt'
-          with open(changed_files_path, 'r', encoding='utf-8') as f:
-            changed_files = [line.strip() for line in f if line.strip()]
-
-          changed_cc = [p.replace('\\', '/') for p in changed_files if p.endswith('.c') or p.endswith('.cpp')]
-
-          summary = {
-            'target': target,
-            'changed_files': changed_files,
-            'changed_cc_files': changed_cc,
-            'files': [],
-            'totals': {'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': 100.0},
-          }
-
-          if not changed_cc:
-            # No C/C++ files to measure with gcovr; treat as satisfied.
-            with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
-              json.dump(summary, out, indent=2)
-            print('CHANGED_FILES_COVERAGE=100.0')
-            sys.exit(0)
-
-          tree = ET.parse(coverage_xml)
-          root = tree.getroot()
-
-          # Map filename -> (covered, valid)
-          file_stats = {}
-          for cls in root.findall('.//class'):
-            filename = cls.attrib.get('filename')
-            if not filename:
-              continue
-            filename = filename.replace('\\', '/')
-            covered = 0
-            valid = 0
-            for line in cls.findall('.//line'):
-              valid += 1
-              try:
-                hits = int(line.attrib.get('hits', '0'))
-              except ValueError:
-                hits = 0
-              if hits > 0:
-                covered += 1
-            prev = file_stats.get(filename)
-            if prev:
-              covered += prev[0]
-              valid += prev[1]
-            file_stats[filename] = (covered, valid)
-
-          def find_best_match(path: str):
-            # Cobertura filenames are typically repo-relative. Try exact match first.
-            if path in file_stats:
-              return path
-            # Try suffix match if gcovr emitted a different root prefix.
-            matches = [k for k in file_stats.keys() if k.endswith(path)]
-            if len(matches) == 1:
-              return matches[0]
-            # As a fallback, try matching by basename.
-            base = path.split('/')[-1]
-            matches = [k for k in file_stats.keys() if k.split('/')[-1] == base]
-            if len(matches) == 1:
-              return matches[0]
-            return None
-
-          total_cov = 0
-          total_valid = 0
-          for p in changed_cc:
-            match = find_best_match(p)
-            if not match:
-              summary['files'].append({'path': p, 'matched': None, 'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': None})
-              continue
-            cov, valid = file_stats.get(match, (0, 0))
-            percent = (100.0 * cov / valid) if valid else None
-            summary['files'].append({'path': p, 'matched': match, 'lines_valid': valid, 'lines_covered': cov, 'coverage_percent': percent})
-            if valid:
-              total_cov += cov
-              total_valid += valid
-
-          overall = (100.0 * total_cov / total_valid) if total_valid else 0.0
-          summary['totals'] = {'lines_valid': total_valid, 'lines_covered': total_cov, 'coverage_percent': overall}
-
-          with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
-            json.dump(summary, out, indent=2)
-
-          print(f'CHANGED_FILES_COVERAGE={overall:.2f}')
-          PY
-
-          coverage="$(python3 -c "import json; print(json.load(open('/tmp/coverage_summary.json'))['totals']['coverage_percent'])")"
-          echo "Changed-files coverage: ${coverage}%"
-
-          meets="$(python3 -c "import json, os; cov=float(json.load(open('/tmp/coverage_summary.json'))['totals']['coverage_percent']); tgt=float(os.environ.get('COVERAGE_TARGET','90')); print('true' if cov>=tgt else 'false')")"
-          if [ "$meets" = "true" ]; then
-            echo "Coverage target met."
-            break
-          fi
-
-          i=$((i+1))
-        done
+        echo "Invoking ${AGENT_NAME} with ${COVERAGE_TARGET}% target for changed files"
+        gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
 
     - name: Request PR creation via safe output
       shell: bash
