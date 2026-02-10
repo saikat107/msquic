@@ -21,7 +21,7 @@
 #
 # Iteratively generate tests for PR-changed files until a coverage target is reached (Ubuntu + gcovr)
 #
-# frontmatter-hash: 7dee75512f2d33e7287e2fbb6e0036a0e9452cbfae359108df63f113b5a8e400
+# frontmatter-hash: efb93808e2340aaf9bff8071a3427ef0dda751c27f3f48d56b8957ef9e7b4a76
 
 name: "Deeptest Coverage Ubuntu Pr"
 "on":
@@ -597,7 +597,7 @@ jobs:
           </system>
           PROMPT_EOF
           cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
-          {{#runtime-import workflows/deeptest-coverage-ubuntu-pr.md}}
+          {{#runtime-import workflows\deeptest-coverage-ubuntu-pr.md}}
           PROMPT_EOF
       - name: Substitute placeholders
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -859,99 +859,99 @@ jobs:
               --output "${COVERAGE_XML}"
 
             echo "Computing changed-files coverage from Cobertura XML"
-            python3 - << 'PY'
-              import json
-              import os
-              import sys
-              import xml.etree.ElementTree as ET
+            python3 - <<'PY'
+            import json
+            import os
+            import sys
+            import xml.etree.ElementTree as ET
 
-              coverage_xml = os.environ.get('COVERAGE_XML', 'artifacts/coverage/gcovr-coverage.xml')
-              target = float(os.environ.get('COVERAGE_TARGET', '90'))
+            coverage_xml = os.environ.get('COVERAGE_XML', 'artifacts/coverage/gcovr-coverage.xml')
+            target = float(os.environ.get('COVERAGE_TARGET', '90'))
 
-              changed_files_path = '/tmp/changed_files.txt'
-              with open(changed_files_path, 'r', encoding='utf-8') as f:
-                changed_files = [line.strip() for line in f if line.strip()]
+            changed_files_path = '/tmp/changed_files.txt'
+            with open(changed_files_path, 'r', encoding='utf-8') as f:
+              changed_files = [line.strip() for line in f if line.strip()]
 
-              changed_cc = [p.replace('\\\\', '/') for p in changed_files if p.endswith('.c') or p.endswith('.cpp')]
+            changed_cc = [p.replace('\\', '/') for p in changed_files if p.endswith('.c') or p.endswith('.cpp')]
 
-              summary = {
-                'target': target,
-                'changed_files': changed_files,
-                'changed_cc_files': changed_cc,
-                'files': [],
-                'totals': {'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': 100.0},
-              }
+            summary = {
+              'target': target,
+              'changed_files': changed_files,
+              'changed_cc_files': changed_cc,
+              'files': [],
+              'totals': {'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': 100.0},
+            }
 
-              if not changed_cc:
-                # No C/C++ files to measure with gcovr; treat as satisfied.
-                with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
-                  json.dump(summary, out, indent=2)
-                print('CHANGED_FILES_COVERAGE=100.0')
-                sys.exit(0)
-
-              tree = ET.parse(coverage_xml)
-              root = tree.getroot()
-
-              # Map filename -> (covered, valid)
-              file_stats = {}
-              for cls in root.findall('.//class'):
-                filename = cls.attrib.get('filename')
-                if not filename:
-                  continue
-                filename = filename.replace('\\\\', '/')
-                covered = 0
-                valid = 0
-                for line in cls.findall('.//line'):
-                  valid += 1
-                  try:
-                    hits = int(line.attrib.get('hits', '0'))
-                  except ValueError:
-                    hits = 0
-                  if hits > 0:
-                    covered += 1
-                prev = file_stats.get(filename)
-                if prev:
-                  covered += prev[0]
-                  valid += prev[1]
-                file_stats[filename] = (covered, valid)
-
-              def find_best_match(path: str):
-                # Cobertura filenames are typically repo-relative. Try exact match first.
-                if path in file_stats:
-                  return path
-                # Try suffix match if gcovr emitted a different root prefix.
-                matches = [k for k in file_stats.keys() if k.endswith(path)]
-                if len(matches) == 1:
-                  return matches[0]
-                # As a fallback, try matching by basename.
-                base = path.split('/')[-1]
-                matches = [k for k in file_stats.keys() if k.split('/')[-1] == base]
-                if len(matches) == 1:
-                  return matches[0]
-                return None
-
-              total_cov = 0
-              total_valid = 0
-              for p in changed_cc:
-                match = find_best_match(p)
-                if not match:
-                  summary['files'].append({'path': p, 'matched': None, 'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': None})
-                  continue
-                cov, valid = file_stats.get(match, (0, 0))
-                percent = (100.0 * cov / valid) if valid else None
-                summary['files'].append({'path': p, 'matched': match, 'lines_valid': valid, 'lines_covered': cov, 'coverage_percent': percent})
-                if valid:
-                  total_cov += cov
-                  total_valid += valid
-
-              overall = (100.0 * total_cov / total_valid) if total_valid else 0.0
-              summary['totals'] = {'lines_valid': total_valid, 'lines_covered': total_cov, 'coverage_percent': overall}
-
+            if not changed_cc:
+              # No C/C++ files to measure with gcovr; treat as satisfied.
               with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
                 json.dump(summary, out, indent=2)
+              print('CHANGED_FILES_COVERAGE=100.0')
+              sys.exit(0)
 
-              print(f'CHANGED_FILES_COVERAGE={overall:.2f}')
-              PY
+            tree = ET.parse(coverage_xml)
+            root = tree.getroot()
+
+            # Map filename -> (covered, valid)
+            file_stats = {}
+            for cls in root.findall('.//class'):
+              filename = cls.attrib.get('filename')
+              if not filename:
+                continue
+              filename = filename.replace('\\', '/')
+              covered = 0
+              valid = 0
+              for line in cls.findall('.//line'):
+                valid += 1
+                try:
+                  hits = int(line.attrib.get('hits', '0'))
+                except ValueError:
+                  hits = 0
+                if hits > 0:
+                  covered += 1
+              prev = file_stats.get(filename)
+              if prev:
+                covered += prev[0]
+                valid += prev[1]
+              file_stats[filename] = (covered, valid)
+
+            def find_best_match(path: str):
+              # Cobertura filenames are typically repo-relative. Try exact match first.
+              if path in file_stats:
+                return path
+              # Try suffix match if gcovr emitted a different root prefix.
+              matches = [k for k in file_stats.keys() if k.endswith(path)]
+              if len(matches) == 1:
+                return matches[0]
+              # As a fallback, try matching by basename.
+              base = path.split('/')[-1]
+              matches = [k for k in file_stats.keys() if k.split('/')[-1] == base]
+              if len(matches) == 1:
+                return matches[0]
+              return None
+
+            total_cov = 0
+            total_valid = 0
+            for p in changed_cc:
+              match = find_best_match(p)
+              if not match:
+                summary['files'].append({'path': p, 'matched': None, 'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': None})
+                continue
+              cov, valid = file_stats.get(match, (0, 0))
+              percent = (100.0 * cov / valid) if valid else None
+              summary['files'].append({'path': p, 'matched': match, 'lines_valid': valid, 'lines_covered': cov, 'coverage_percent': percent})
+              if valid:
+                total_cov += cov
+                total_valid += valid
+
+            overall = (100.0 * total_cov / total_valid) if total_valid else 0.0
+            summary['totals'] = {'lines_valid': total_valid, 'lines_covered': total_cov, 'coverage_percent': overall}
+
+            with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
+              json.dump(summary, out, indent=2)
+
+            print(f'CHANGED_FILES_COVERAGE={overall:.2f}')
+            PY
 
             coverage="$(python3 -c "import json; print(json.load(open('/tmp/coverage_summary.json'))['totals']['coverage_percent'])")"
             echo "Changed-files coverage: ${coverage}%"
@@ -1471,99 +1471,99 @@ jobs:
               --output "${COVERAGE_XML}"
 
             echo "Computing changed-files coverage from Cobertura XML"
-            python3 - << 'PY'
-              import json
-              import os
-              import sys
-              import xml.etree.ElementTree as ET
+            python3 - <<'PY'
+            import json
+            import os
+            import sys
+            import xml.etree.ElementTree as ET
 
-              coverage_xml = os.environ.get('COVERAGE_XML', 'artifacts/coverage/gcovr-coverage.xml')
-              target = float(os.environ.get('COVERAGE_TARGET', '90'))
+            coverage_xml = os.environ.get('COVERAGE_XML', 'artifacts/coverage/gcovr-coverage.xml')
+            target = float(os.environ.get('COVERAGE_TARGET', '90'))
 
-              changed_files_path = '/tmp/changed_files.txt'
-              with open(changed_files_path, 'r', encoding='utf-8') as f:
-                changed_files = [line.strip() for line in f if line.strip()]
+            changed_files_path = '/tmp/changed_files.txt'
+            with open(changed_files_path, 'r', encoding='utf-8') as f:
+              changed_files = [line.strip() for line in f if line.strip()]
 
-              changed_cc = [p.replace('\\\\', '/') for p in changed_files if p.endswith('.c') or p.endswith('.cpp')]
+            changed_cc = [p.replace('\\', '/') for p in changed_files if p.endswith('.c') or p.endswith('.cpp')]
 
-              summary = {
-                'target': target,
-                'changed_files': changed_files,
-                'changed_cc_files': changed_cc,
-                'files': [],
-                'totals': {'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': 100.0},
-              }
+            summary = {
+              'target': target,
+              'changed_files': changed_files,
+              'changed_cc_files': changed_cc,
+              'files': [],
+              'totals': {'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': 100.0},
+            }
 
-              if not changed_cc:
-                # No C/C++ files to measure with gcovr; treat as satisfied.
-                with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
-                  json.dump(summary, out, indent=2)
-                print('CHANGED_FILES_COVERAGE=100.0')
-                sys.exit(0)
-
-              tree = ET.parse(coverage_xml)
-              root = tree.getroot()
-
-              # Map filename -> (covered, valid)
-              file_stats = {}
-              for cls in root.findall('.//class'):
-                filename = cls.attrib.get('filename')
-                if not filename:
-                  continue
-                filename = filename.replace('\\\\', '/')
-                covered = 0
-                valid = 0
-                for line in cls.findall('.//line'):
-                  valid += 1
-                  try:
-                    hits = int(line.attrib.get('hits', '0'))
-                  except ValueError:
-                    hits = 0
-                  if hits > 0:
-                    covered += 1
-                prev = file_stats.get(filename)
-                if prev:
-                  covered += prev[0]
-                  valid += prev[1]
-                file_stats[filename] = (covered, valid)
-
-              def find_best_match(path: str):
-                # Cobertura filenames are typically repo-relative. Try exact match first.
-                if path in file_stats:
-                  return path
-                # Try suffix match if gcovr emitted a different root prefix.
-                matches = [k for k in file_stats.keys() if k.endswith(path)]
-                if len(matches) == 1:
-                  return matches[0]
-                # As a fallback, try matching by basename.
-                base = path.split('/')[-1]
-                matches = [k for k in file_stats.keys() if k.split('/')[-1] == base]
-                if len(matches) == 1:
-                  return matches[0]
-                return None
-
-              total_cov = 0
-              total_valid = 0
-              for p in changed_cc:
-                match = find_best_match(p)
-                if not match:
-                  summary['files'].append({'path': p, 'matched': None, 'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': None})
-                  continue
-                cov, valid = file_stats.get(match, (0, 0))
-                percent = (100.0 * cov / valid) if valid else None
-                summary['files'].append({'path': p, 'matched': match, 'lines_valid': valid, 'lines_covered': cov, 'coverage_percent': percent})
-                if valid:
-                  total_cov += cov
-                  total_valid += valid
-
-              overall = (100.0 * total_cov / total_valid) if total_valid else 0.0
-              summary['totals'] = {'lines_valid': total_valid, 'lines_covered': total_cov, 'coverage_percent': overall}
-
+            if not changed_cc:
+              # No C/C++ files to measure with gcovr; treat as satisfied.
               with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
                 json.dump(summary, out, indent=2)
+              print('CHANGED_FILES_COVERAGE=100.0')
+              sys.exit(0)
 
-              print(f'CHANGED_FILES_COVERAGE={overall:.2f}')
-              PY
+            tree = ET.parse(coverage_xml)
+            root = tree.getroot()
+
+            # Map filename -> (covered, valid)
+            file_stats = {}
+            for cls in root.findall('.//class'):
+              filename = cls.attrib.get('filename')
+              if not filename:
+                continue
+              filename = filename.replace('\\', '/')
+              covered = 0
+              valid = 0
+              for line in cls.findall('.//line'):
+                valid += 1
+                try:
+                  hits = int(line.attrib.get('hits', '0'))
+                except ValueError:
+                  hits = 0
+                if hits > 0:
+                  covered += 1
+              prev = file_stats.get(filename)
+              if prev:
+                covered += prev[0]
+                valid += prev[1]
+              file_stats[filename] = (covered, valid)
+
+            def find_best_match(path: str):
+              # Cobertura filenames are typically repo-relative. Try exact match first.
+              if path in file_stats:
+                return path
+              # Try suffix match if gcovr emitted a different root prefix.
+              matches = [k for k in file_stats.keys() if k.endswith(path)]
+              if len(matches) == 1:
+                return matches[0]
+              # As a fallback, try matching by basename.
+              base = path.split('/')[-1]
+              matches = [k for k in file_stats.keys() if k.split('/')[-1] == base]
+              if len(matches) == 1:
+                return matches[0]
+              return None
+
+            total_cov = 0
+            total_valid = 0
+            for p in changed_cc:
+              match = find_best_match(p)
+              if not match:
+                summary['files'].append({'path': p, 'matched': None, 'lines_valid': 0, 'lines_covered': 0, 'coverage_percent': None})
+                continue
+              cov, valid = file_stats.get(match, (0, 0))
+              percent = (100.0 * cov / valid) if valid else None
+              summary['files'].append({'path': p, 'matched': match, 'lines_valid': valid, 'lines_covered': cov, 'coverage_percent': percent})
+              if valid:
+                total_cov += cov
+                total_valid += valid
+
+            overall = (100.0 * total_cov / total_valid) if total_valid else 0.0
+            summary['totals'] = {'lines_valid': total_valid, 'lines_covered': total_cov, 'coverage_percent': overall}
+
+            with open('/tmp/coverage_summary.json', 'w', encoding='utf-8') as out:
+              json.dump(summary, out, indent=2)
+
+            print(f'CHANGED_FILES_COVERAGE={overall:.2f}')
+            PY
 
             coverage="$(python3 -c "import json; print(json.load(open('/tmp/coverage_summary.json'))['totals']['coverage_percent'])")"
             echo "Changed-files coverage: ${coverage}%"
