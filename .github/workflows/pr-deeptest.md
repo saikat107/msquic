@@ -102,7 +102,33 @@ You must never attempt to run `git push` as it is not supported in this environm
    - `src/core/connection.c` → Test harnesses: `Connection*`
    - `src/platform/*.c` → Test harnesses: `Platform*`, `Datapath*`
 
-3. Store the coverage report at `${{ env.COVERAGE_RESULT_PATH }}`.
+3. **Iterative coverage loop** (up to 3 attempts):
+
+   For each attempt (1, 2, 3):
+   a. Generate or improve test files for the changed source files
+   b. Build the project with coverage enabled:
+      ```bash
+      cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DQUIC_BUILD_TEST=ON -DCMAKE_C_FLAGS="--coverage" -DCMAKE_CXX_FLAGS="--coverage"
+      cmake --build build --parallel $(nproc)
+      ```
+   c. Run the relevant tests:
+      ```bash
+      cd build && ctest --output-on-failure
+      ```
+   d. Measure coverage with gcovr for the changed source files:
+      ```bash
+      gcovr --filter 'src/' --xml-pretty -o /tmp/coverage.xml build/
+      gcovr --filter 'src/' --print-summary build/ | tee /tmp/coverage_summary.txt
+      ```
+   e. Parse the line coverage percentage from the summary output
+   f. **If coverage >= 90%**: Stop iterating, proceed to step 4
+   g. **If coverage < 90% and attempt < 3**: Analyze which lines/branches are uncovered, then generate additional tests targeting those gaps. Go back to step (a).
+   h. **If coverage < 90% and attempt == 3**: Stop iterating, proceed to step 4 with whatever coverage was achieved
+
+   After the loop, write a summary to `${{ env.COVERAGE_RESULT_PATH }}` including:
+   - Number of attempts made
+   - Final coverage percentage
+   - List of source files and their individual coverage
 
 4. Prepare commit with `scripts/create-commit-for-safe-outputs.sh` and use `create_pull_request` with:
     - Title: "Tests for PR #${{ env.PR_NUMBER }}"
