@@ -32,6 +32,8 @@ What to do
 4) If coverage < target, repeat from step 1. If the target is reached (or no reasonable progress is possible), stop.
 
 When you believe the work is complete
-- Do NOT create a PR yourself. Do NOT run `gh pr create` or `git push`. The workflow will handle PR creation separately.
-- When explicitly requested by the workflow in a later step, use the `create_pull_request` safe output tool (not the GitHub CLI).
+- Your final output should be the newly generated or modified test files written to the workspace.
+- Do NOT create a PR yourself. Do NOT run `gh pr create` or `git push`. Do NOT commit changes.
+- The workflow will automatically detect your generated test files and create a PR on a new branch in a separate step.
+- When explicitly requested by the workflow in the PR-creation step, use the `create_pull_request` safe output tool (not the GitHub CLI).
 - PR content should include the workflow run id and a short summary of what changed and how coverage improved.
