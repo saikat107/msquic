@@ -17,6 +17,8 @@ Constraints
 - Prefer changes under src/test/. Avoid changing production code unless required for testability.
 - Follow existing MsQuic test patterns. Keep tests deterministic and avoid flaky timing-dependent assertions.
 - Make minimal, focused changes. Avoid large refactors.
+- Do NOT create PRs, do NOT run `gh pr create`, do NOT push branches. The workflow handles PR creation after you finish.
+- After each coverage measurement, write a JSON summary to /tmp/coverage_summary.json containing at minimum: {"target": <number>, "totals": {"lines_valid": <n>, "lines_covered": <n>, "coverage_percent": <n>}, "files": [{"path": "<file>", "coverage_percent": <n>}]}.
 
 What you will be given
 - The list of changed .c/.cpp/.py files in the PR (filtered).
@@ -30,5 +32,6 @@ What to do
 4) If coverage < target, repeat from step 1. If the target is reached (or no reasonable progress is possible), stop.
 
 When you believe the work is complete
-- When explicitly requested by the workflow, use the workflow safe output to create a draft pull request for the generated tests.
+- Do NOT create a PR yourself. Do NOT run `gh pr create` or `git push`. The workflow will handle PR creation separately.
+- When explicitly requested by the workflow in a later step, use the `create_pull_request` safe output tool (not the GitHub CLI).
 - PR content should include the workflow run id and a short summary of what changed and how coverage improved.
