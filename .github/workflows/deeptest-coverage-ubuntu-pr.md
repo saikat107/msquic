@@ -138,14 +138,29 @@ engine:
           exit 1
         fi
 
-        echo "Computing changed files via git diff (${PR_BASE_SHA}...${PR_HEAD_SHA})"
+        echo "Computing changed files via git diff (PR base/head SHAs: ${PR_BASE_SHA}...${PR_HEAD_SHA})"
         echo "INCLUDE_REGEX=${INCLUDE_REGEX}"
         echo "EXCLUDE_REGEX=${EXCLUDE_REGEX}"
 
-        git fetch --no-tags --depth=1 origin "${PR_BASE_SHA}" || true
-        git fetch --no-tags --depth=1 origin "${PR_HEAD_SHA}" || true
+        # The default Actions checkout is shallow. Triple-dot diff requires a merge-base,
+        # which may be missing unless we have enough history.
+        if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+          echo "Repository is shallow; fetching full history to enable merge-base computation"
+          git fetch --no-tags --prune --unshallow origin || true
+        fi
 
-        ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${PR_BASE_SHA}...${PR_HEAD_SHA}" || true)"
+        # Ensure both SHAs are present locally.
+        git fetch --no-tags --prune origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" || true
+
+        merge_base="$(git merge-base "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true)"
+        if [ -n "$merge_base" ]; then
+          echo "Merge base: $merge_base"
+          ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${merge_base}..${PR_HEAD_SHA}" || true)"
+        else
+          echo "Warning: no merge base found; falling back to two-dot diff (${PR_BASE_SHA}..${PR_HEAD_SHA})"
+          ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${PR_BASE_SHA}..${PR_HEAD_SHA}" || true)"
+        fi
+
         if [ -z "$ALL_FILES" ]; then
           echo "No files returned by git diff for PR #$PR_NUMBER" >&2
           exit 1
@@ -158,8 +173,7 @@ engine:
           | head -n "$MAX_FILES" || true)"
 
         if [ -z "$FILTERED_FILES" ]; then
-          echo "No matching .c/.cpp/.py files after filters; falling back to first $MAX_FILES changed files." 
-          FILTERED_FILES="$(printf '%s\n' "$ALL_FILES" | head -n "$MAX_FILES" || true)"
+          echo "No matching .c/.cpp/.py files after filters."
         fi
 
         printf '%s\n' "$FILTERED_FILES" > /tmp/changed_files.txt
@@ -205,6 +219,12 @@ engine:
         if [ ! -f /tmp/changed_files.txt ]; then
           echo "Missing changed file list: /tmp/changed_files.txt" >&2
           exit 1
+        fi
+
+        if [ ! -s /tmp/changed_files.txt ]; then
+          echo "No matching .c/.cpp/.py files were selected; skipping DeepTest + build/test/coverage."
+          printf '{"skipped": true, "reason": "no matching .c/.cpp/.py files"}\n' > /tmp/coverage_summary.json
+          exit 0
         fi
 
         changed_c_files="$(grep -E '\\.(c|cpp)$' /tmp/changed_files.txt || true)"
