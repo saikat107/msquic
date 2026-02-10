@@ -787,3 +787,628 @@ TEST(RangeTest, SearchRangeThree)
     ASSERT_EQ(index, 2);
 #endif
 }
+
+//
+// Test QuicRangeReset: Verify that reset clears all values from a non-empty range.
+// The test adds multiple ranges, confirms they exist, then resets and verifies the
+// range is empty. Asserts that UsedLength becomes 0 while allocation remains.
+//
+TEST(RangeTest, ResetNonEmptyRange)
+{
+    SmartRange range;
+    range.Add(100, 50);
+    range.Add(200, 50);
+    range.Add(300, 50);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    ASSERT_EQ(range.Min(), (uint32_t)100);
+    ASSERT_EQ(range.Max(), (uint32_t)349);
+    
+    range.Reset();
+    ASSERT_EQ(range.ValidCount(), (uint32_t)0);
+    
+    // After reset, should be able to add again
+    range.Add(500);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint32_t)500);
+    ASSERT_EQ(range.Max(), (uint32_t)500);
+}
+
+//
+// Test QuicRangeGetRange: Query a value that exists in the range and verify
+// the returned contiguous count and whether it's the last range. This tests
+// the basic success path of GetRange with a value in the middle of a subrange.
+//
+TEST(RangeTest, GetRangeValueExists)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(200, 50);  // [200-249]
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 120, &count, &isLast));
+    ASSERT_EQ(count, (uint64_t)30);  // 120 to 149 = 30 values
+    ASSERT_FALSE(isLast);  // Not the last range
+}
+
+//
+// Test QuicRangeGetRange: Query a value in the last subrange and verify
+// IsLastRange is set to TRUE. This ensures the last range detection works.
+//
+TEST(RangeTest, GetRangeValueInLastRange)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(200, 50);  // [200-249]
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 220, &count, &isLast));
+    ASSERT_EQ(count, (uint64_t)30);  // 220 to 249 = 30 values
+    ASSERT_TRUE(isLast);  // This is the last range
+}
+
+//
+// Test QuicRangeGetRange: Query a value that doesn't exist in the range.
+// Verifies that GetRange returns FALSE for values not in any subrange.
+//
+TEST(RangeTest, GetRangeValueNotExists)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(200, 50);  // [200-249]
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    ASSERT_FALSE(QuicRangeGetRange(&range.range, 175, &count, &isLast));
+    ASSERT_FALSE(QuicRangeGetRange(&range.range, 50, &count, &isLast));
+    ASSERT_FALSE(QuicRangeGetRange(&range.range, 300, &count, &isLast));
+}
+
+//
+// Test QuicRangeGetRange: Query on an empty range.
+// Verifies that GetRange returns FALSE when the range has no values.
+//
+TEST(RangeTest, GetRangeEmptyRange)
+{
+    SmartRange range;
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    ASSERT_FALSE(QuicRangeGetRange(&range.range, 100, &count, &isLast));
+}
+
+//
+// Test QuicRangeGetMinSafe/GetMaxSafe: Verify safe get operations on empty range.
+// These functions should return FALSE when the range is empty, preventing undefined behavior.
+//
+TEST(RangeTest, GetMinMaxSafeEmptyRange)
+{
+    SmartRange range;
+    uint64_t value;
+    
+    ASSERT_FALSE(QuicRangeGetMinSafe(&range.range, &value));
+    ASSERT_FALSE(QuicRangeGetMaxSafe(&range.range, &value));
+}
+
+//
+// Test QuicRangeGetMinSafe/GetMaxSafe: Verify safe get operations on non-empty range.
+// These functions should return TRUE and set the correct min/max values.
+//
+TEST(RangeTest, GetMinMaxSafeNonEmptyRange)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(200, 50);  // [200-249]
+    
+    uint64_t minVal, maxVal;
+    ASSERT_TRUE(QuicRangeGetMinSafe(&range.range, &minVal));
+    ASSERT_EQ(minVal, (uint64_t)100);
+    
+    ASSERT_TRUE(QuicRangeGetMaxSafe(&range.range, &maxVal));
+    ASSERT_EQ(maxVal, (uint64_t)249);
+}
+
+//
+// Test QuicRangeSetMin: Remove all values below a specified minimum.
+// Verifies that SetMin removes subranges entirely below the min value
+// and trims subranges that span the min value.
+//
+TEST(RangeTest, SetMinRemovesValuesBelow)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(200, 50);  // [200-249]
+    range.Add(300, 50);  // [300-349]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    
+    QuicRangeSetMin(&range.range, 220);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    ASSERT_EQ(range.Min(), (uint64_t)220);
+    ASSERT_EQ(range.Max(), (uint64_t)349);
+}
+
+//
+// Test QuicRangeSetMin: Set min to a value below all existing values.
+// Verifies that SetMin does nothing when the min is already below all values.
+//
+TEST(RangeTest, SetMinBelowAllValues)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(200, 50);  // [200-249]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    QuicRangeSetMin(&range.range, 50);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)249);
+}
+
+//
+// Test QuicRangeSetMin: Set min to trim the first subrange without removing it.
+// Verifies that a subrange spanning the min value is correctly trimmed.
+//
+TEST(RangeTest, SetMinTrimsFirstSubrange)
+{
+    SmartRange range;
+    range.Add(100, 100);  // [100-199]
+    range.Add(300, 50);   // [300-349]
+    
+    QuicRangeSetMin(&range.range, 150);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    ASSERT_EQ(range.Min(), (uint64_t)150);
+    ASSERT_EQ(range.Max(), (uint64_t)349);
+    
+    // Verify the first subrange is trimmed correctly
+    auto sub = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub->Low, (uint64_t)150);
+    ASSERT_EQ(sub->Count, (uint64_t)50);  // 150-199 = 50 values
+}
+
+//
+// Test QuicRangeRemoveRange: Remove a range in the middle of a subrange, causing a split.
+// Verifies that removing from the middle creates two separate subranges.
+//
+TEST(RangeTest, RemoveRangeMiddleSplit)
+{
+    SmartRange range;
+    range.Add(100, 100);  // [100-199]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    range.Remove(130, 40);  // Remove [130-169]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Verify first subrange [100-129]
+    auto sub1 = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub1->Low, (uint64_t)100);
+    ASSERT_EQ(sub1->Count, (uint64_t)30);
+    
+    // Verify second subrange [170-199]
+    auto sub2 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub2->Low, (uint64_t)170);
+    ASSERT_EQ(sub2->Count, (uint64_t)30);
+}
+
+//
+// Test QuicRangeRemoveRange: Remove a range spanning multiple subranges.
+// Verifies that remove can handle removal across multiple disjoint subranges.
+//
+TEST(RangeTest, RemoveRangeSpanningMultiple)
+{
+    SmartRange range;
+    range.Add(100, 50);   // [100-149]
+    range.Add(200, 50);   // [200-249]
+    range.Add(300, 50);   // [300-349]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    
+    range.Remove(120, 200);  // Remove [120-319] - spans all three
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Should have [100-119] and [320-349]
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    auto sub1 = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub1->Low, (uint64_t)100);
+    ASSERT_EQ(sub1->Count, (uint64_t)20);
+    
+    auto sub2 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub2->Low, (uint64_t)320);
+    ASSERT_EQ(sub2->Count, (uint64_t)30);
+}
+
+//
+// Test QuicRangeCompact: Explicitly test compaction merging adjacent subranges.
+// Manually creates adjacent subranges and verifies they are merged by Compact.
+//
+TEST(RangeTest, CompactMergesAdjacentRanges)
+{
+    SmartRange range;
+    // Add ranges that will become adjacent after another operation
+    range.Add(100, 50);   // [100-149]
+    range.Add(150, 50);   // [150-199] - should already be merged by Add
+    range.Add(200, 50);   // [200-249] - should already be merged
+    
+    // All should be merged into one range
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)249);
+}
+
+//
+// Test QuicRangeCompact: Test compaction on a range with no adjacent subranges.
+// Verifies that Compact doesn't incorrectly merge non-adjacent ranges.
+//
+TEST(RangeTest, CompactNoMergeNeeded)
+{
+    SmartRange range;
+    range.Add(100, 10);   // [100-109]
+    range.Add(200, 10);   // [200-209]
+    range.Add(300, 10);   // [300-309]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    
+    QuicRangeCompact(&range.range);
+    
+    // Should still be 3 separate ranges
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)309);
+}
+
+//
+// Test growth from pre-allocated buffer to heap allocation.
+// Verifies that the range can grow beyond the initial 8 subranges by allocating
+// heap memory. Asserts that after adding many separate values, the allocation grows.
+//
+TEST(RangeTest, GrowFromPreAllocToHeap)
+{
+    SmartRange range;
+    // Add 10 separate values to force growth beyond initial 8
+    for (uint32_t i = 0; i < 10; i++) {
+        range.Add(i * 100, 1);
+    }
+    ASSERT_EQ(range.ValidCount(), (uint32_t)10);
+    ASSERT_EQ(range.Min(), (uint64_t)0);
+    ASSERT_EQ(range.Max(), (uint64_t)900);
+}
+
+//
+// Test that adding values when at maximum capacity causes oldest values to be evicted.
+// Sets a limited MaxAllocSize, fills to capacity, then adds more values to trigger
+// aging out of oldest values. Asserts that oldest values are removed.
+//
+TEST(RangeTest, HitMaxAndAgeOut)
+{
+    const uint32_t MaxCount = 8;
+    SmartRange range(MaxCount * sizeof(QUIC_SUBRANGE));
+    
+    // Fill to max with separate values
+    for (uint32_t i = 0; i < MaxCount; i++) {
+        range.Add(i * 10, 1);
+    }
+    ASSERT_EQ(range.ValidCount(), MaxCount);
+    ASSERT_EQ(range.Min(), (uint64_t)0);
+    
+    // Add a value that should cause aging out of oldest
+    range.Add(MaxCount * 10, 1);
+    ASSERT_EQ(range.ValidCount(), MaxCount);
+    ASSERT_EQ(range.Min(), (uint64_t)10);  // First value (0) should be aged out
+    ASSERT_EQ(range.Max(), (uint64_t)MaxCount * 10);
+}
+
+//
+// Test shrinking after removing many subranges.
+// Creates many subranges, then removes most of them to trigger shrinking.
+// Verifies that the range still functions correctly after shrinking.
+//
+TEST(RangeTest, ShrinkAfterManyRemovals)
+{
+    SmartRange range;
+    
+    // Add many separate ranges to force heap allocation
+    for (uint32_t i = 0; i < 20; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), (uint32_t)20);
+    
+    // Remove most of them to trigger shrinking
+    for (uint32_t i = 0; i < 18; i++) {
+        range.Remove(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    ASSERT_EQ(range.Min(), (uint64_t)1800);
+    ASSERT_EQ(range.Max(), (uint64_t)1909);
+}
+
+//
+// Test adding a range that merges with multiple existing subranges.
+// Creates several disjoint subranges, then adds a range that bridges them all.
+// Asserts that all subranges are merged into one.
+//
+TEST(RangeTest, AddRangeMergingMultipleSubranges)
+{
+    SmartRange range;
+    range.Add(100, 10);   // [100-109]
+    range.Add(120, 10);   // [120-129]
+    range.Add(140, 10);   // [140-149]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    
+    // Add range [105-145] that overlaps/bridges all three
+    range.Add(105, 41);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)149);
+}
+
+//
+// Test QuicRangeGetRange at the exact start of a subrange.
+// Verifies that querying the first value of a subrange returns the full count.
+//
+TEST(RangeTest, GetRangeAtSubrangeStart)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 100, &count, &isLast));
+    ASSERT_EQ(count, (uint64_t)50);  // Full range from start
+    ASSERT_TRUE(isLast);  // Only one range
+}
+
+//
+// Test QuicRangeGetRange at the exact end of a subrange.
+// Verifies that querying the last value returns count of 1.
+//
+TEST(RangeTest, GetRangeAtSubrangeEnd)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 149, &count, &isLast));
+    ASSERT_EQ(count, (uint64_t)1);  // Only one value left
+    ASSERT_TRUE(isLast);
+}
+
+//
+// Test SetMin that removes all subranges entirely.
+// Sets min above all existing values, resulting in an empty range.
+//
+TEST(RangeTest, SetMinRemovesAllSubranges)
+{
+    SmartRange range;
+    range.Add(100, 50);   // [100-149]
+    range.Add(200, 50);   // [200-249]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    QuicRangeSetMin(&range.range, 300);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)0);
+}
+
+//
+// Test adding range with Count=1 (edge case equivalent to AddValue).
+// Verifies that AddRange with Count=1 behaves correctly.
+//
+TEST(RangeTest, AddRangeWithCountOne)
+{
+    SmartRange range;
+    BOOLEAN updated;
+    
+    auto result = QuicRangeAddRange(&range.range, 100, 1, &updated);
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(updated);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)100);
+}
+
+//
+// Test adding a range that's already present (no update).
+// Verifies that RangeUpdated is set to FALSE when adding an existing range.
+//
+TEST(RangeTest, AddRangeAlreadyPresent)
+{
+    SmartRange range;
+    BOOLEAN updated1, updated2;
+    
+    auto result1 = QuicRangeAddRange(&range.range, 100, 50, &updated1);
+    ASSERT_NE(result1, nullptr);
+    ASSERT_TRUE(updated1);
+    
+    // Add the same range again
+    auto result2 = QuicRangeAddRange(&range.range, 110, 20, &updated2);
+    ASSERT_NE(result2, nullptr);
+    ASSERT_FALSE(updated2);  // Should not be updated, already present
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+}
+
+//
+// Test removing a single value from a larger range (creates split).
+// Removes one value from the middle of a range, splitting it into two.
+//
+TEST(RangeTest, RemoveSingleValueFromMiddle)
+{
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    range.Remove(105, 1);  // Remove just 105
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Should have [100-104] and [106-109]
+    auto sub1 = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub1->Low, (uint64_t)100);
+    ASSERT_EQ(sub1->Count, (uint64_t)5);
+    
+    auto sub2 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub2->Low, (uint64_t)106);
+    ASSERT_EQ(sub2->Count, (uint64_t)4);
+}
+
+//
+// Test edge case with large values near UINT64_MAX.
+// Verifies that the range can handle values close to the maximum 64-bit value.
+//
+TEST(RangeTest, LargeValuesNearMaxUint64)
+{
+    SmartRange range;
+    uint64_t largeValue = UINT64_MAX - 1000;
+    
+    range.Add(largeValue, 100);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), largeValue);
+    ASSERT_EQ(range.Max(), largeValue + 99);
+}
+
+//
+// Test adding duplicate values (should be idempotent).
+// Adds the same value multiple times and verifies only one entry exists.
+//
+TEST(RangeTest, AddDuplicateValues)
+{
+    SmartRange range;
+    range.Add(100);
+    range.Add(100);
+    range.Add(100);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)100);
+}
+
+//
+// Test QuicRangeRemoveSubranges directly.
+// Manually creates subranges and removes a subset of them.
+// Verifies that the specified subranges are removed correctly.
+//
+TEST(RangeTest, RemoveSubrangesDirectly)
+{
+    SmartRange range;
+    range.Add(100, 10);   // [100-109]
+    range.Add(200, 10);   // [200-209]
+    range.Add(300, 10);   // [300-309]
+    range.Add(400, 10);   // [400-409]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)4);
+    
+    // Remove 2 subranges starting at index 1 (removes [200-209] and [300-309])
+    QuicRangeRemoveSubranges(&range.range, 1, 2);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Should have [100-109] and [400-409]
+    auto sub1 = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub1->Low, (uint64_t)100);
+    
+    auto sub2 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub2->Low, (uint64_t)400);
+}
+
+//
+// Test QuicRangeShrink explicitly.
+// Grows the range, then explicitly calls shrink to reduce allocation.
+// Verifies that shrink succeeds and range remains valid.
+//
+TEST(RangeTest, ExplicitShrink)
+{
+    SmartRange range;
+    
+    // Grow to heap allocation
+    for (uint32_t i = 0; i < 16; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), (uint32_t)16);
+    
+    // Remove most subranges
+    for (uint32_t i = 0; i < 14; i++) {
+        QuicRangeRemoveSubranges(&range.range, 0, 1);
+    }
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Explicitly shrink
+    BOOLEAN shrinkResult = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(shrinkResult);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+}
+
+//
+// Test multiple resets in sequence.
+// Verifies that reset can be called multiple times and range remains valid.
+//
+TEST(RangeTest, MultipleResets)
+{
+    SmartRange range;
+    
+    range.Add(100, 50);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    range.Reset();
+    ASSERT_EQ(range.ValidCount(), (uint32_t)0);
+    
+    range.Add(200, 50);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    range.Reset();
+    ASSERT_EQ(range.ValidCount(), (uint32_t)0);
+    
+    range.Add(300, 50);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)300);
+}
+
+//
+// Test adding range that extends existing range backwards.
+// Adds a range that overlaps the start of an existing range, extending it leftward.
+//
+TEST(RangeTest, AddRangeExtendingBackwards)
+{
+    SmartRange range;
+    range.Add(200, 100);  // [200-299]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    range.Add(150, 60);   // [150-209] - overlaps start
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)150);
+    ASSERT_EQ(range.Max(), (uint64_t)299);
+}
+
+//
+// Test adding range that extends existing range forwards.
+// Adds a range that overlaps the end of an existing range, extending it rightward.
+//
+TEST(RangeTest, AddRangeExtendingForwards)
+{
+    SmartRange range;
+    range.Add(100, 100);  // [100-199]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    range.Add(180, 50);   // [180-229] - overlaps end
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)229);
+}
+
+//
+// Test compact on empty range (edge case).
+// Verifies that calling compact on an empty range doesn't crash.
+//
+TEST(RangeTest, CompactEmptyRange)
+{
+    SmartRange range;
+    QuicRangeCompact(&range.range);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)0);
+}
+
+//
+// Test compact on single subrange (should be no-op).
+// Verifies that compact with one subrange doesn't change anything.
+//
+TEST(RangeTest, CompactSingleSubrange)
+{
+    SmartRange range;
+    range.Add(100, 50);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    QuicRangeCompact(&range.range);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)100);
+    ASSERT_EQ(range.Max(), (uint64_t)149);
+}
