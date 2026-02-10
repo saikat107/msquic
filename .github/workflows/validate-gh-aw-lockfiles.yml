@@ -1,0 +1,58 @@
+name: Validate gh-aw lockfiles
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**/*.md"
+      - ".github/workflows/**/*.lock.yml"
+      - ".github/aw/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gh-aw extension
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh extension list | awk '{print $1}' | grep -qx 'github/gh-aw'; then
+            gh extension install github/gh-aw
+          else
+            echo "gh-aw already installed"
+          fi
+
+      - name: Compile workflows (canonical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh aw compile
+
+      - name: Ensure no lockfile diffs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code; then
+            echo "Lockfiles are out of date or non-canonical." >&2
+            echo "Run 'gh aw compile' and commit the resulting .lock.yml changes." >&2
+            exit 1
+          fi
+
+      - name: Fail on Windows-style runtime-import paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R --line-number --fixed-string '{{#runtime-import ' .github/workflows | grep -q '\\'; then
+            echo "Found Windows-style backslashes in runtime-import macros in lockfiles." >&2
+            echo "Lockfiles must use forward slashes so they run on Linux runners." >&2
+            grep -R --line-number --fixed-string '{{#runtime-import ' .github/workflows | grep '\\' || true
+            exit 1
+          fi
