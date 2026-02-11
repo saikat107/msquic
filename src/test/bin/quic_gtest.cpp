@@ -703,6 +703,244 @@ TEST_P(WithFamilyArgs, LocalPathChanges) {
     }
 }
 
+//
+// Range (core utility) tests
+//
+
+TEST(Range, Initialization) {
+    TestLogger Logger("QuicTestRangeInitialization");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeInitialization)));
+    } else {
+        QuicTestRangeInitialization();
+    }
+}
+
+TEST(Range, AddSingleValue) {
+    TestLogger Logger("QuicTestRangeAddSingleValue");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeAddSingleValue)));
+    } else {
+        QuicTestRangeAddSingleValue();
+    }
+}
+
+TEST(Range, AddMultipleNonAdjacentValues) {
+    TestLogger Logger("QuicTestRangeAddMultipleNonAdjacentValues");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeAddMultipleNonAdjacentValues)));
+    } else {
+        QuicTestRangeAddMultipleNonAdjacentValues();
+    }
+}
+
+TEST(Range, AddContiguousRange) {
+    TestLogger Logger("QuicTestRangeAddContiguousRange");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeAddContiguousRange)));
+    } else {
+        QuicTestRangeAddContiguousRange();
+    }
+}
+
+TEST(Range, AddRangeMergesAdjacent) {
+    TestLogger Logger("QuicTestRangeAddRangeMergesAdjacent");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeAddRangeMergesAdjacent)));
+    } else {
+        QuicTestRangeAddRangeMergesAdjacent();
+    }
+}
+
+TEST(Range, AddRangeMergesOverlapping) {
+    TestLogger Logger("QuicTestRangeAddRangeMergesOverlapping");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeAddRangeMergesOverlapping)));
+    } else {
+        QuicTestRangeAddRangeMergesOverlapping();
+    }
+}
+
+TEST(Range, RemoveSingleValue) {
+    TestLogger Logger("QuicTestRangeRemoveSingleValue");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeRemoveSingleValue)));
+    } else {
+        QuicTestRangeRemoveSingleValue();
+    }
+}
+
+TEST(Range, RemoveMiddleSplitsSubrange) {
+    TestLogger Logger("QuicTestRangeRemoveMiddleSplitsSubrange");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeRemoveMiddleSplitsSubrange)));
+    } else {
+        QuicTestRangeRemoveMiddleSplitsSubrange();
+    }
+}
+
+TEST(Range, RemoveEntireSubrange) {
+    TestLogger Logger("QuicTestRangeRemoveEntireSubrange");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeRemoveEntireSubrange)));
+    } else {
+        QuicTestRangeRemoveEntireSubrange();
+    }
+}
+
+TEST(Range, Reset) {
+    TestLogger Logger("QuicTestRangeReset");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeReset)));
+    } else {
+        QuicTestRangeReset();
+    }
+}
+
+TEST(Range, GetMin) {
+    TestLogger Logger("QuicTestRangeGetMin");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetMin)));
+    } else {
+        QuicTestRangeGetMin();
+    }
+}
+
+TEST(Range, GetMinSafeEmpty) {
+    TestLogger Logger("QuicTestRangeGetMinSafeEmpty");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetMinSafeEmpty)));
+    } else {
+        QuicTestRangeGetMinSafeEmpty();
+    }
+}
+
+TEST(Range, GetMinSafeNonEmpty) {
+    TestLogger Logger("QuicTestRangeGetMinSafeNonEmpty");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetMinSafeNonEmpty)));
+    } else {
+        QuicTestRangeGetMinSafeNonEmpty();
+    }
+}
+
+TEST(Range, GetMax) {
+    TestLogger Logger("QuicTestRangeGetMax");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetMax)));
+    } else {
+        QuicTestRangeGetMax();
+    }
+}
+
+TEST(Range, GetMaxSafeEmpty) {
+    TestLogger Logger("QuicTestRangeGetMaxSafeEmpty");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetMaxSafeEmpty)));
+    } else {
+        QuicTestRangeGetMaxSafeEmpty();
+    }
+}
+
+TEST(Range, GetMaxSafeNonEmpty) {
+    TestLogger Logger("QuicTestRangeGetMaxSafeNonEmpty");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetMaxSafeNonEmpty)));
+    } else {
+        QuicTestRangeGetMaxSafeNonEmpty();
+    }
+}
+
+TEST(Range, SetMin) {
+    TestLogger Logger("QuicTestRangeSetMin");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeSetMin)));
+    } else {
+        QuicTestRangeSetMin();
+    }
+}
+
+TEST(Range, SetMinPartialRemoval) {
+    TestLogger Logger("QuicTestRangeSetMinPartialRemoval");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeSetMinPartialRemoval)));
+    } else {
+        QuicTestRangeSetMinPartialRemoval();
+    }
+}
+
+TEST(Range, CompactMultipleAdjacent) {
+    TestLogger Logger("QuicTestRangeCompactMultipleAdjacent");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeCompactMultipleAdjacent)));
+    } else {
+        QuicTestRangeCompactMultipleAdjacent();
+    }
+}
+
+TEST(Range, ShrinkExplicit) {
+    TestLogger Logger("QuicTestRangeShrinkExplicit");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeShrinkExplicit)));
+    } else {
+        QuicTestRangeShrinkExplicit();
+    }
+}
+
+TEST(Range, ShrinkToPreallocated) {
+    TestLogger Logger("QuicTestRangeShrinkToPreallocated");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeShrinkToPreallocated)));
+    } else {
+        QuicTestRangeShrinkToPreallocated();
+    }
+}
+
+TEST(Range, AddDuplicateValue) {
+    TestLogger Logger("QuicTestRangeAddDuplicateValue");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeAddDuplicateValue)));
+    } else {
+        QuicTestRangeAddDuplicateValue();
+    }
+}
+
+TEST(Range, RemoveNonExistent) {
+    TestLogger Logger("QuicTestRangeRemoveNonExistent");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeRemoveNonExistent)));
+    } else {
+        QuicTestRangeRemoveNonExistent();
+    }
+}
+
+TEST(Range, GetRangeIsLastRange) {
+    TestLogger Logger("QuicTestRangeGetRangeIsLastRange");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeGetRangeIsLastRange)));
+    } else {
+        QuicTestRangeGetRangeIsLastRange();
+    }
+}
+
+TEST(Range, LargeScale) {
+    TestLogger Logger("QuicTestRangeLargeScale");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeLargeScale)));
+    } else {
+        QuicTestRangeLargeScale();
+    }
+}
+
+TEST(Range, HighBoundaryValues) {
+    TestLogger Logger("QuicTestRangeHighBoundaryValues");
+    if (TestingKernelMode) {
+        ASSERT_TRUE(InvokeKernelTest(FUNC(QuicTestRangeHighBoundaryValues)));
+    } else {
+        QuicTestRangeHighBoundaryValues();
+    }
+}
+
 TEST(Mtu, Settings) {
     TestLogger Logger("QuicTestMtuSettings");
     if (TestingKernelMode) {
