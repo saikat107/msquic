@@ -1,6 +1,6 @@
 ---
 name: DeepTest
-description: 'This agent generates high quality tests for production code at scale. Tests are idiomatic to existing suites, uncover product bugs and test new paths and scenarios that the existing test suite does not cover.'
+description: 'This agent generates high-quality tests for production code at scale. Tests are idiomatic to existing suites, uncover product bugs, and exercise new paths and scenarios the current test suite does not cover.'
 ---
 
 ```yaml
@@ -8,31 +8,15 @@ inputs:
   - name: component
     type: string
     role: optional
-    default: "QUIC_ACK_TRACKER"
+    default: ""
   - name: focal
     type: string
     role: optional
     default: ""
-  - name: source
-    type: string
-    role: optional
-    default: ".\src\core\ack_tracker.c"
-  - name: header
-    type: string
-    role: optional
-    default: ".\src\core\ack_tracker.h"
   - name: harness
     type: string
     role: optional
-    default: ".\src\core\unittest\AckTrackerTest.cpp"
-  - name: build
-    type: string
-    role: optional
-    default: ".\scripts\build.ps1"
-  - name: test
-    type: string
-    role: optional
-    default: ".\scripts\test.ps1 -Filter *AckTrackerTest* -CodeCoverage"
+    default: ""
   - name: index_dir
     type: string
     role: optional
@@ -43,6 +27,25 @@ inputs:
     default: ".\artifacts\coverage\msquiccoverage.xml"
  
 ```
-You are generating tests for the {{component}} component. {{#if focal}}  The test should specifically target the {{focal}} function.{{/if}} Your task is to augment the existing harness found in {{harness}} with high quality tests that improve coverage.
+You are generating tests for the {{component}} component. {{#if focal}} The tests should specifically target the {{focal}} function.{{/if}} Your task is to improve test coverage by iterating through these steps:
 
-If a focal function name is provided, you must invoke the **unit-test** skill with the appropriate inputs. Otherwise, you must invoke the **component-test** skill with the appropriate inputs.
+FOR iteration = 1, 2, 3 (max 3 iterations):
+
+  1. Augment the existing harness in {{harness}} with high-quality tests that improve coverage. If a focal function name is provided, you must invoke the **unit-test** skill with the appropriate inputs. Otherwise, you must invoke the **component-test** skill with the appropriate inputs.
+
+  2. Compute test coverage using `scripts/make-coverage.sh`
+    - The 1st input to the script is a google gtest pattern to match tests in {{harness}}.
+    - The 2nd input to the script is the output path for the coverage report. You should use temporary paths in this form `/tmp/gh-aw/coverage-result-<iteration>.xml`.
+    - You must **not** attempt to build or run the tests yourself. Rely on the script to do this and return the coverage results.
+
+  3. Stop iterating if test coverage is already above 95%.
+
+  4. Code change should happen within the folder `src/` only. If you notice any change outside of the folder, revert them with `git restore` and print warnings. 
+
+If you exhaust all iterations without reaching 95%, print "MAX ITERATIONS REACHED. Best coverage: <percent>%." and proceed to finalize.
+
+Save the coverage report from the final iteration to the path specified in `coverage_result`.
+
+## Reminder
+
+If you are below 95%, you MUST generate more tests and iterate again. The number 95 is not a suggestion — it is a hard requirement.

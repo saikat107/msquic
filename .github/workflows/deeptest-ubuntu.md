@@ -1,5 +1,5 @@
 ---
-description: Generate tests for a user-specified source file using Copilot CLI with DeepTest custom agent
+description: Generate tests for a user-specified source file using DeepTest agent
 on:
   workflow_dispatch:
     inputs:
@@ -17,27 +17,38 @@ permissions:
   contents: read
   pull-requests: read
   issues: read
-strict: false
+roles: all
 env:
-  GH_TOKEN: ${{ github.token }}
-  COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-  SOURCE_FILE: ${{ inputs.source_file || github.event.inputs.source_file || 'src/core/loss_detection.c' }}
+  SOURCE_FILE: ${{ inputs.source_file || github.event.inputs.source_file }}
   RUN_ID: ${{ github.run_id }}
 engine:
-  id: custom
-  steps:
-    - name: Install Copilot CLI
-      run: |
-        gh extension install github/gh-copilot || echo "Copilot CLI already installed"
-    - name: Run DeepTest via Copilot CLI
-      run: |
-        echo "Invoking DeepTest custom agent for: $SOURCE_FILE (Run ID: $RUN_ID)"
-        gh copilot --agent DeepTest -p "Generate comprehensive tests for the source file at $SOURCE_FILE. Analyze the file, identify testable functions, and create test cases following MsQuic test patterns in src/test/. After generating tests, create a PR with all changed files. Include the workflow run ID $RUN_ID in the PR title." --allow-all-tools
+  id: copilot
+  agent: DeepTest
 safe-outputs:
   create-pull-request:
-    title-prefix: "[DeepTest Run #${{ github.run_id }}] "
+    title-prefix: ""
     labels: [automation, tests]
+    draft: true
   noop:
 ---
 
-{{#runtime-import agentics/deeptest-ubuntu.md}}
+# Generate Tests with DeepTest
+
+Generate comprehensive tests for the source file at `${{ env.SOURCE_FILE }}`.
+
+## Instructions
+
+1. Analyze the source file to identify testable functions
+2. Create test cases following MsQuic test patterns in `src/test/`
+3. Stage all new and modified test files with `git add`
+
+## After Generating Tests
+
+Check if there are staged changes using `git diff --cached --stat`.
+
+If there are staged changes, use `create_pull_request` with:
+- Title: "[DeepTest Run #${{ env.RUN_ID }}] Tests for ${{ env.SOURCE_FILE }}"
+- Body: "Auto-generated tests for `${{ env.SOURCE_FILE }}` by DeepTest workflow run #${{ env.RUN_ID }}."
+- Branch: "meiyang/${{ env.RUN_ID }}"
+
+If no staged changes, use `noop` with message "No test changes generated."
