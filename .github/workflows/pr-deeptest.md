@@ -89,23 +89,70 @@ Each file entry contains:
 
 You must never attempt to run `git push` as it is not supported in this environment.
 
-1. Read the PR files list from `${{ env.PR_FILES_PATH }}`
-   - **`added`**: Analyze the new code and create comprehensive tests
-   - **`modified`**: Analyze the changes and update/add tests to cover modifications
-   - **`removed`**: Check if associated tests should be removed or updated
+### Step 1 — Analyze PR files
 
-2. For each file path, map to relevant test harnesses:
-   - `src/core/*.c` → Test harnesses: `Basic*`, `Core*`, `Connection*`, `Stream*`
-   - `src/core/cubic.c` → Test harnesses: `Cubic*`, `CongestionControl*`
-   - `src/core/loss_detection.c` → Test harnesses: `Loss*`, `Recovery*`
-   - `src/core/stream.c` → Test harnesses: `Stream*`
-   - `src/core/connection.c` → Test harnesses: `Connection*`
-   - `src/platform/*.c` → Test harnesses: `Platform*`, `Datapath*`
+Read the PR files list from `${{ env.PR_FILES_PATH }}`:
+- **`added`**: Analyze the new code and create comprehensive tests
+- **`modified`**: Analyze the changes and update/add tests to cover modifications
+- **`removed`**: Check if associated tests should be removed or updated
 
-3. Store the coverage report at `${{ env.COVERAGE_RESULT_PATH }}`.
+For each file path, map to relevant test harnesses:
+- `src/core/*.c` → Test harnesses: `Basic*`, `Core*`, `Connection*`, `Stream*`
+- `src/core/cubic.c` → Test harnesses: `Cubic*`, `CongestionControl*`
+- `src/core/loss_detection.c` → Test harnesses: `Loss*`, `Recovery*`
+- `src/core/stream.c` → Test harnesses: `Stream*`
+- `src/core/connection.c` → Test harnesses: `Connection*`
+- `src/platform/*.c` → Test harnesses: `Platform*`, `Datapath*`
 
-4. Prepare commit with `scripts/create-commit-for-safe-outputs.sh` and use `create_pull_request` with:
-    - Title: "Tests for PR #${{ env.PR_NUMBER }}"
-    - Body: workflow run ${{ github.run_id }}
+### Step 2 — Iterative generate → build → test → coverage loop
 
-5. If no staged changes, use `noop` with message "No test changes generated for PR #${{ env.PR_NUMBER }}."
+Repeat the following cycle until the coverage of the changed source files reaches **90 %** or you have completed **5 iterations** (whichever comes first):
+
+#### 2a. Generate or improve tests
+Write (or refine) test code targeting the changed source files identified in Step 1.
+
+#### 2b. Prepare the package
+```bash
+pwsh ./scripts/prepare-machine.ps1 -ForBuild -ForTest
+pwsh ./scripts/prepare-package.ps1
+```
+
+#### 2c. Build with code-coverage instrumentation
+```bash
+pwsh ./scripts/build.ps1 -Config Debug -Tls openssl -CodeCoverage -DisablePerf -DisableTools -CI
+```
+The `-CodeCoverage` flag enables gcov instrumentation (Linux).
+
+#### 2d. Run the relevant tests
+```bash
+pwsh ./scripts/test.ps1 -Config Debug -Tls openssl -CodeCoverage -Filter "<HARNESS_FILTER>"
+```
+Replace `<HARNESS_FILTER>` with the test harness filter that matches the changed files (e.g. `Cubic*` for `cubic.c`). Use `:` to combine multiple filters (e.g. `Cubic*:Connection*`).
+
+#### 2e. Collect and evaluate coverage
+After the test run, coverage data is in `artifacts/coverage/msquiccoverage.xml` (Cobertura XML).
+Parse the file and compute the **line-coverage percentage** for the changed source files only.
+
+- **≥ 90 %** → Exit the loop and proceed to Step 3.
+- **< 90 %** → Analyse which lines/branches are uncovered, generate additional tests, and repeat from 2a.
+- **Iteration limit reached (5)** → Proceed to Step 3 with the best coverage achieved.
+
+Log each iteration's coverage percentage so progress is visible in the workflow output.
+
+### Step 3 — Report
+
+Write a Markdown coverage summary to `${{ env.COVERAGE_RESULT_PATH }}` containing:
+- Per-file line-coverage percentage for each changed source file
+- Overall coverage percentage
+- Number of iterations taken
+- List of test files created or modified
+
+### Step 4 — Create pull request
+
+Prepare a commit with `scripts/create-commit-for-safe-outputs.sh` and use `create_pull_request` with:
+- Title: "Tests for PR #${{ env.PR_NUMBER }}"
+- Body: workflow run ${{ github.run_id }}
+
+### Step 5 — No changes fallback
+
+If no staged changes exist, use `noop` with message "No test changes generated for PR #${{ env.PR_NUMBER }}."
