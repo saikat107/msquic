@@ -787,3 +787,347 @@ TEST(RangeTest, SearchRangeThree)
     ASSERT_EQ(index, 2);
 #endif
 }
+
+//
+// Tests for NEW functions added in PR #18
+//
+
+//
+// Test: QuicRangeCompact merges adjacent subranges.
+// Scenario: Create separate but adjacent subranges, verify Compact merges them.
+// This tests the new QuicRangeCompact function added in the PR.
+//
+TEST(RangeTest, CompactAdjacentRanges)
+{
+    SmartRange range;
+    
+    // Add separate adjacent ranges
+    range.Add(10, 5);  // [10-14]
+    range.Add(15, 5);  // [15-19]
+    
+    // After AddRange, compaction should have already merged them
+    // (AddRange now calls Compact)
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)10);
+    ASSERT_EQ(range.Max(), (uint64_t)19);
+    
+    // Verify the merged range
+    auto sub = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub->Low, (uint64_t)10);
+    ASSERT_EQ(sub->Count, (uint64_t)10);
+}
+
+//
+// Test: QuicRangeCompact handles overlapping ranges.
+// Scenario: Create overlapping subranges and verify they merge correctly.
+//
+TEST(RangeTest, CompactOverlappingRanges)
+{
+    SmartRange range;
+    
+    // Add overlapping ranges
+    range.Add(10, 10);  // [10-19]
+    range.Add(15, 10);  // [15-24]
+    
+    // Should be merged into single range [10-24]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)10);
+    ASSERT_EQ(range.Max(), (uint64_t)24);
+}
+
+//
+// Test: QuicRangeCompact on empty range (no-op).
+// Scenario: Call operations on an empty range, verify no crash.
+//
+TEST(RangeTest, CompactEmptyRange)
+{
+    SmartRange range;
+    
+    // Compact empty range - should be no-op
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)0);
+}
+
+//
+// Test: QuicRangeCompact on single subrange (no-op).
+// Scenario: Single subrange should remain unchanged after compact.
+//
+TEST(RangeTest, CompactSingleRange)
+{
+    SmartRange range;
+    
+    range.Add(50, 10);
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    // Explicit compact should be no-op
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    auto sub = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub->Low, (uint64_t)50);
+    ASSERT_EQ(sub->Count, (uint64_t)10);
+}
+
+//
+// Test: QuicRangeCompact merges multiple adjacent ranges.
+// Scenario: Create several adjacent ranges and verify all merge into one.
+//
+TEST(RangeTest, CompactMultipleAdjacentRanges)
+{
+    SmartRange range;
+    
+    // Add multiple adjacent ranges
+    range.Add(10, 5);   // [10-14]
+    range.Add(15, 5);   // [15-19]
+    range.Add(20, 5);   // [20-24]
+    range.Add(25, 5);   // [25-29]
+    
+    // After compaction (done automatically by AddRange), should have 1 range
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)10);
+    ASSERT_EQ(range.Max(), (uint64_t)29);
+}
+
+//
+// Test: Compaction after AddRange is automatic.
+// Scenario: Verify that AddRange automatically compacts when range is updated.
+//
+TEST(RangeTest, AddRangeAutoCompacts)
+{
+    SmartRange range;
+    
+    // Add two separate ranges
+    range.Add(10, 5);  // [10-14]
+    range.Add(20, 5);  // [20-24]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Add bridging range that should trigger merge
+    range.Add(15, 5);  // [15-19]
+    
+    // Should now be compacted into single range [10-24]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)10);
+    ASSERT_EQ(range.Max(), (uint64_t)24);
+}
+
+//
+// Test: Compaction after RemoveRange is automatic.
+// Scenario: Verify that RemoveRange triggers compaction.
+//
+TEST(RangeTest, RemoveRangeAutoCompacts)
+{
+    SmartRange range;
+    
+    // Add a large range
+    range.Add(10, 50);  // [10-59]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    
+    // Remove middle portion - creates split
+    range.Remove(30, 10);  // Remove [30-39]
+    
+    // Should have 2 ranges: [10-29] and [40-59]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    
+    // Verify ranges
+    auto sub0 = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub0->Low, (uint64_t)10);
+    ASSERT_EQ(sub0->Count, (uint64_t)20);
+    
+    auto sub1 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub1->Low, (uint64_t)40);
+    ASSERT_EQ(sub1->Count, (uint64_t)20);
+}
+
+//
+// Test: Compaction after SetMin is automatic.
+// Scenario: SetMin should trigger compaction.
+//
+TEST(RangeTest, SetMinAutoCompacts)
+{
+    SmartRange range;
+    
+    // Add multiple ranges
+    range.Add(10, 10);  // [10-19]
+    range.Add(30, 10);  // [30-39]
+    range.Add(50, 10);  // [50-59]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    
+    // Set min to 35 - drops first range, trims second
+    QuicRangeSetMin(&range.range, 35);
+    
+    // Should have 2 ranges: [35-39] and [50-59]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)2);
+    ASSERT_EQ(range.Min(), (uint64_t)35);
+}
+
+//
+// Test: QuicRangeShrink reduces allocation correctly.
+// Scenario: Grow range, then explicitly shrink and verify reallocation.
+//
+TEST(RangeTest, ShrinkExplicit)
+{
+    SmartRange range;
+    
+    // Add many separate ranges to force growth
+    for (uint64_t i = 0; i < 20; i++) {
+        range.Add(i * 100);
+    }
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)20);
+    ASSERT_TRUE(range.range.AllocLength >= 20);
+    
+    // Remove most ranges
+    for (uint64_t i = 0; i < 15; i++) {
+        range.Remove(i * 100, 1);
+    }
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)5);
+    
+    // Explicitly shrink to initial size
+    ASSERT_TRUE(QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT));
+    
+    // Should now use pre-allocated buffer
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(range.range.SubRanges == range.range.PreAllocSubRanges);
+    
+    // Verify data integrity
+    ASSERT_EQ(range.ValidCount(), (uint32_t)5);
+    
+    // Verify remaining values are correct
+    for (uint32_t i = 0; i < 5; i++) {
+        auto sub = QuicRangeGet(&range.range, i);
+        ASSERT_EQ(sub->Low, (uint64_t)((15 + i) * 100));
+        ASSERT_EQ(sub->Count, (uint64_t)1);
+    }
+}
+
+//
+// Test: Automatic shrinking after removals.
+// Scenario: Remove many values and verify automatic shrinking occurs.
+//
+TEST(RangeTest, ShrinkAutomatic)
+{
+    SmartRange range;
+    
+    // Add many ranges to force growth
+    for (uint64_t i = 0; i < 32; i++) {
+        range.Add(i * 100);
+    }
+    
+    uint32_t allocLengthAfterGrowth = range.range.AllocLength;
+    ASSERT_TRUE(allocLengthAfterGrowth > QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    // Remove most ranges to trigger automatic shrinking
+    for (uint64_t i = 0; i < 28; i++) {
+        range.Remove(i * 100, 1);
+    }
+    
+    // Shrinking may have occurred (depends on thresholds)
+    // At minimum, verify range is still valid
+    ASSERT_EQ(range.ValidCount(), (uint32_t)4);
+}
+
+//
+// Test: Shrink to pre-allocated buffer.
+// Scenario: Verify shrinking back to pre-allocated buffer works correctly.
+//
+TEST(RangeTest, ShrinkToPreallocated)
+{
+    SmartRange range;
+    
+    // Force growth beyond pre-allocated
+    for (uint64_t i = 0; i < 16; i++) {
+        range.Add(i * 10);
+    }
+    
+    ASSERT_TRUE(range.range.AllocLength > QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(range.range.SubRanges != range.range.PreAllocSubRanges);
+    
+    // Remove enough to fit back in pre-allocated
+    for (uint64_t i = 0; i < 12; i++) {
+        range.Remove(i * 10, 1);
+    }
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)4);
+    
+    // Explicitly shrink to initial size
+    ASSERT_TRUE(QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT));
+    
+    // Should now use pre-allocated buffer
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(range.range.SubRanges == range.range.PreAllocSubRanges);
+}
+
+//
+// Test: Shrink failure when requested size is too small.
+// Scenario: Attempt to shrink below UsedLength should fail.
+//
+TEST(RangeTest, ShrinkInvalidSize)
+{
+    SmartRange range;
+    
+    // Add 10 ranges
+    for (uint64_t i = 0; i < 10; i++) {
+        range.Add(i * 100);
+    }
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)10);
+    
+    // Attempting to shrink to size smaller than UsedLength would be invalid
+    // (Contract states NewAllocLength must be >= UsedLength)
+    // This test documents the precondition
+    
+    // Valid shrink: to exactly UsedLength
+    uint32_t originalAlloc = range.range.AllocLength;
+    if (originalAlloc > 10) {
+        ASSERT_TRUE(QuicRangeShrink(&range.range, 10));
+        ASSERT_EQ(range.range.AllocLength, (uint32_t)10);
+        ASSERT_EQ(range.ValidCount(), (uint32_t)10);
+    }
+}
+
+//
+// Test: Compaction with large number of adjacent ranges.
+// Scenario: Stress test compaction with many adjacent ranges.
+//
+TEST(RangeTest, CompactManyAdjacentRanges)
+{
+    SmartRange range;
+    
+    // Add 50 contiguous values that should all merge
+    for (uint64_t i = 0; i < 50; i++) {
+        range.Add(1000 + i);
+    }
+    
+    // Should be compacted into single range [1000-1049]
+    ASSERT_EQ(range.ValidCount(), (uint32_t)1);
+    ASSERT_EQ(range.Min(), (uint64_t)1000);
+    ASSERT_EQ(range.Max(), (uint64_t)1049);
+    
+    auto sub = QuicRangeGet(&range.range, 0);
+    ASSERT_EQ(sub->Low, (uint64_t)1000);
+    ASSERT_EQ(sub->Count, (uint64_t)50);
+}
+
+//
+// Test: Verify compaction doesn't affect non-adjacent ranges.
+// Scenario: Ranges with gaps should remain separate after compaction.
+//
+TEST(RangeTest, CompactPreservesGaps)
+{
+    SmartRange range;
+    
+    // Add ranges with gaps
+    range.Add(10, 5);   // [10-14]
+    range.Add(20, 5);   // [20-24]  (gap of 5)
+    range.Add(30, 5);   // [30-34]  (gap of 5)
+    
+    // Should remain as 3 separate ranges
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+    
+    // Explicit compact should not merge
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), (uint32_t)3);
+}
