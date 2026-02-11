@@ -19,42 +19,101 @@
 #   gh aw compile
 # For more information: https://github.com/github/gh-aw/blob/main/.github/aw/github-agentic-workflows.md
 #
-# Generate tests for a user-specified source file using Copilot CLI with DeepTest custom agent
+# Generate tests for PR-changed files targeting 95% coverage (Ubuntu + gcovr)
 #
-# frontmatter-hash: b70a1c5906f3f7a4c67145039eff59e520f1fe240213ab7ab2f82092ea0a560d
+# frontmatter-hash: f8c95796e6c01334098ec86021da7ee510e23bcbac190da46bff89d723d88bca
 
-name: "Deeptest Ubuntu"
+name: "Deeptest Coverage Ubuntu Pr"
 "on":
-  workflow_call:
-    inputs:
-      source_file:
-        description: Relative path to the source file (e.g., src/core/connection.c)
-        required: false
-        type: string
+  pull_request:
+    branches:
+    - master
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
   workflow_dispatch:
     inputs:
-      source_file:
-        description: Relative path to the source file (e.g., src/core/connection.c)
+      agent_name:
+        default: DeepTest
+        description: Copilot custom agent name
+        required: false
+        type: string
+      arch:
+        default: x64
+        description: CPU architecture
+        required: false
+        type: string
+      config:
+        default: Debug
+        description: Build/test configuration (Debug recommended for coverage)
+        required: false
+        type: string
+      coverage_target:
+        default: "95"
+        description: Target line coverage percentage for the changed C/C++ files
+        required: false
+        type: string
+      exclude_regex:
+        default: "(\\.md$|\\.ya?ml$|\\.json$|\\.txt$|^docs/|^submodules/|^src/test/)"
+        description: grep -E exclude filter (applied to path list)
+        required: false
+        type: string
+      include_regex:
+        default: ^src/
+        description: grep -E include filter (applied to path list)
+        required: false
+        type: string
+      max_files:
+        default: "10"
+        description: Max number of changed files to include
+        required: false
+        type: string
+      max_iterations:
+        default: "5"
+        description: Max agent iterations to try before stopping
+        required: false
+        type: string
+      pr_number:
+        description: Pull request number (required when manually dispatching)
         required: true
+        type: string
+      tls:
+        default: openssl
+        description: TLS provider
+        required: false
         type: string
 
 permissions: {}
 
 concurrency:
-  group: "gh-aw-${{ github.workflow }}"
+  group: "gh-aw-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+  cancel-in-progress: true
 
-run-name: "Deeptest Ubuntu"
+run-name: "Deeptest Coverage Ubuntu Pr"
 
 env:
+  AGENT_NAME: ${{ github.event.inputs.agent_name || 'DeepTest' }}
+  ARCH: ${{ github.event.inputs.arch || 'x64' }}
+  CONFIG: ${{ github.event.inputs.config || 'Debug' }}
   COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+  COVERAGE_TARGET: ${{ github.event.inputs.coverage_target || '95' }}
+  COVERAGE_XML: artifacts/coverage/gcovr-coverage.xml
+  EXCLUDE_REGEX: "${{ github.event.inputs.exclude_regex || '(\\.md$|\\.ya?ml$|\\.json$|\\.txt$|^docs/|^submodules/|^src/test/)' }}"
   GH_TOKEN: ${{ github.token }}
+  INCLUDE_REGEX: ${{ github.event.inputs.include_regex || '^src/' }}
+  MAX_FILES: ${{ github.event.inputs.max_files || '10' }}
+  MAX_ITERATIONS: ${{ github.event.inputs.max_iterations || '5' }}
+  PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
   RUN_ID: ${{ github.run_id }}
-  SOURCE_FILE: ${{ inputs.source_file || github.event.inputs.source_file || 'src/core/loss_detection.c' }}
+  TLS: ${{ github.event.inputs.tls || 'openssl' }}
 
 jobs:
   activation:
     needs: pre_activation
-    if: needs.pre_activation.outputs.activated == 'true'
+    if: >
+      (needs.pre_activation.outputs.activated == 'true') && ((github.event_name != 'pull_request') || (github.event.pull_request.head.repo.id == github.repository_id))
     runs-on: ubuntu-slim
     permissions:
       contents: read
@@ -69,7 +128,7 @@ jobs:
       - name: Check workflow file timestamps
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          GH_AW_WORKFLOW_FILE: "deeptest-ubuntu.lock.yml"
+          GH_AW_WORKFLOW_FILE: "deeptest-coverage-ubuntu-pr.lock.yml"
         with:
           script: |
             const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
@@ -84,8 +143,6 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-    concurrency:
-      group: "gh-aw-custom-${{ github.workflow }}"
     env:
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       GH_AW_ASSETS_ALLOWED_EXTS: ""
@@ -110,6 +167,14 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6.1.0
+        with:
+          go-version: '1.25'
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
       - name: Create gh-aw temp directory
         run: bash /opt/gh-aw/actions/create_gh_aw_tmp_dir.sh
       - name: Configure Git credentials
@@ -160,7 +225,7 @@ jobs:
           cat > /opt/gh-aw/safeoutputs/tools.json << 'EOF'
           [
             {
-              "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. Title will be prefixed with \"[DeepTest Run #${{ github.run_id }}] \". Labels [automation tests] will be automatically added.",
+              "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. Title will be prefixed with \"[DeepTest+Coverage Ubuntu Run #${{ github.run_id }}] \". Labels [automation tests] will be automatically added. PRs will be created as drafts.",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
@@ -433,7 +498,7 @@ jobs:
               version: "",
               agent_version: "",
               cli_version: "v0.40.1",
-              workflow_name: "Deeptest Ubuntu",
+              workflow_name: "Deeptest Coverage Ubuntu Pr",
               experimental: false,
               supports_tools_allowlist: false,
               supports_http_transport: false,
@@ -538,7 +603,7 @@ jobs:
           </system>
           PROMPT_EOF
           cat << 'PROMPT_EOF' >> "$GH_AW_PROMPT"
-          {{#runtime-import workflows/deeptest-ubuntu.md}}
+          {{#runtime-import workflows/deeptest-coverage-ubuntu-pr.md}}
           PROMPT_EOF
       - name: Substitute placeholders
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
@@ -588,21 +653,286 @@ jobs:
         env:
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
         run: bash /opt/gh-aw/actions/print_prompt_summary.sh
+      - name: Fetch PR metadata
+        run: |
+          set -euo pipefail
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "PR_NUMBER is required" >&2
+            exit 1
+          fi
+
+          API_URL="${GITHUB_API_URL:-https://api.github.com}"
+          pr_json="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+
+          head_ref="$(printf '%s' "$pr_json" | jq -r '.head.ref')"
+          base_ref="$(printf '%s' "$pr_json" | jq -r '.base.ref')"
+          head_sha="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+          base_sha="$(printf '%s' "$pr_json" | jq -r '.base.sha')"
+          if [ -z "$head_ref" ] || [ "$head_ref" = "null" ] || [ -z "$base_ref" ] || [ "$base_ref" = "null" ] || \
+             [ -z "$head_sha" ] || [ "$head_sha" = "null" ] || [ -z "$base_sha" ] || [ "$base_sha" = "null" ]; then
+            echo "Unable to determine PR head/base refs for PR #$PR_NUMBER" >&2
+            exit 1
+          fi
+
+          echo "PR_HEAD_REF=$head_ref" >> "$GITHUB_ENV"
+          echo "PR_BASE_REF=$base_ref" >> "$GITHUB_ENV"
+          echo "PR_HEAD_SHA=$head_sha" >> "$GITHUB_ENV"
+          echo "PR_BASE_SHA=$base_sha" >> "$GITHUB_ENV"
+          echo "PR head ref: $head_ref"
+          echo "PR base ref: $base_ref"
+          echo "PR head sha: $head_sha"
+          echo "PR base sha: $base_sha"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        shell: bash
       - name: Install Copilot CLI
         run: |
+          set -euo pipefail
           gh extension install github/gh-copilot || echo "Copilot CLI already installed"
         env:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
           GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
-      - name: Run DeepTest via Copilot CLI
+        shell: bash
+      - name: Collect changed files from PR (git diff)
         run: |
-          echo "Invoking DeepTest custom agent for: $SOURCE_FILE (Run ID: $RUN_ID)"
-          gh copilot --agent DeepTest -p "Generate comprehensive tests for the source file at $SOURCE_FILE. Analyze the file, identify testable functions, and create test cases following MsQuic test patterns in src/test/. After generating tests, create a PR with all changed files. Include the workflow run ID $RUN_ID in the PR title." --allow-all-tools
+          set -euo pipefail
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "PR_NUMBER is required" >&2
+            exit 1
+          fi
+
+          if [ -z "${PR_BASE_SHA:-}" ] || [ -z "${PR_HEAD_SHA:-}" ]; then
+            echo "PR_BASE_SHA and PR_HEAD_SHA are required" >&2
+            exit 1
+          fi
+
+          echo "Computing changed files via git diff (PR base/head SHAs: ${PR_BASE_SHA}...${PR_HEAD_SHA})"
+          echo "INCLUDE_REGEX=${INCLUDE_REGEX}"
+          echo "EXCLUDE_REGEX=${EXCLUDE_REGEX}"
+
+          # The default Actions checkout is shallow. Triple-dot diff requires a merge-base,
+          # which may be missing unless we have enough history.
+          if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+            echo "Repository is shallow; fetching full history to enable merge-base computation"
+            git fetch --no-tags --prune --unshallow origin || true
+          fi
+
+          # Ensure both SHAs are present locally.
+          git fetch --no-tags --prune origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" || true
+
+          merge_base="$(git merge-base "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true)"
+          if [ -n "$merge_base" ]; then
+            echo "Merge base: $merge_base"
+            ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${merge_base}..${PR_HEAD_SHA}" || true)"
+          else
+            echo "Warning: no merge base found; falling back to two-dot diff (${PR_BASE_SHA}..${PR_HEAD_SHA})"
+            ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${PR_BASE_SHA}..${PR_HEAD_SHA}" || true)"
+          fi
+
+          if [ -z "$ALL_FILES" ]; then
+            echo "No files returned by git diff for PR #$PR_NUMBER" >&2
+            exit 1
+          fi
+
+          FILTERED_FILES="$(printf '%s\n' "$ALL_FILES" \
+            | grep -E "$INCLUDE_REGEX" \
+            | grep -Ev "$EXCLUDE_REGEX" \
+            | grep -E '\.(c|cpp|h|py)$' \
+            | head -n "$MAX_FILES" || true)"
+
+          if [ -z "$FILTERED_FILES" ]; then
+            echo "No matching .c/.cpp/.h/.py files after filters."
+          fi
+
+          printf '%s\n' "$FILTERED_FILES" > /tmp/changed_files.txt
+
+          echo "CHANGED_FILES<<EOF" >> "$GITHUB_ENV"
+          cat /tmp/changed_files.txt >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+
+          echo "Selected files:"
+          cat /tmp/changed_files.txt
         env:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
           GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        shell: bash
+      - name: Prepare build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip gcc g++ jq
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user gcovr
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        shell: bash
+      - name: Prepare machine (MsQuic)
+        run: |
+          set -euo pipefail
+          pwsh ./scripts/prepare-machine.ps1 -ForBuild -Tls "$TLS"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        shell: bash
+      - name: Run DeepTest agent
+        run: |
+          set -euo pipefail
+
+          if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
+            echo "COPILOT_GITHUB_TOKEN secret is required" >&2
+            exit 1
+          fi
+
+          if [ ! -f /tmp/changed_files.txt ] || [ ! -s /tmp/changed_files.txt ]; then
+            echo "No matching .c/.cpp/.h/.py files were selected; skipping DeepTest."
+            printf '{"skipped": true, "reason": "no matching .c/.cpp/.h/.py files"}\n' > /tmp/coverage_summary.json
+            exit 0
+          fi
+
+          CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
+
+          prompt="You are generating tests for PR #${PR_NUMBER} in ${GITHUB_REPOSITORY}."
+          prompt+=$'\n\n'"Coverage target: ${COVERAGE_TARGET}% line coverage on the changed C/C++ files."
+          prompt+=$'\n'"Max iterations: ${MAX_ITERATIONS} (stop early once the target is met)."
+          prompt+=$'\n\n'"Changed files (filtered .c/.cpp/.py from this PR):"
+          prompt+=$'\n'"${CHANGED_FILES_BULLETS}"
+          prompt+=$'\n\n'"Build/test/coverage commands (Ubuntu):"
+          prompt+=$'\n'"- Build with coverage: CC=gcc CXX=g++ CFLAGS='--coverage -O0 -g' CXXFLAGS='--coverage -O0 -g' LDFLAGS='--coverage' pwsh ./scripts/build.ps1 -Platform linux -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -DisablePerf -DisableTools -CI"
+          prompt+=$'\n'"- Run tests: pwsh ./scripts/test.ps1 -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -GHA -LogProfile Full.Light"
+          prompt+=$'\n'"- Generate coverage XML: gcovr --root . --object-directory build/linux/${ARCH}_${TLS} --filter '^src/' --exclude '^src/test/' --exclude '^submodules/' --exclude '^src/generated/' --cobertura-pretty --output ${COVERAGE_XML}"
+          prompt+=$'\n\n'"Workflow:"
+          prompt+=$'\n'"1. Generate or improve tests for the changed files to increase coverage."
+          prompt+=$'\n'"2. Build with coverage instrumentation using the commands above."
+          prompt+=$'\n'"3. Run the test suite."
+          prompt+=$'\n'"4. Generate the Cobertura XML coverage report."
+          prompt+=$'\n'"5. Parse the report to compute line coverage for the changed C/C++ files."
+          prompt+=$'\n'"6. If coverage < ${COVERAGE_TARGET}%, go back to step 1 and add more tests."
+          prompt+=$'\n'"7. Repeat until coverage >= ${COVERAGE_TARGET}% or you have done ${MAX_ITERATIONS} iterations."
+          prompt+=$'\n\n'"Constraints:"
+          prompt+=$'\n'"- Prefer adding tests under src/test/. Avoid changing production code unless required for testability."
+          prompt+=$'\n'"- Keep tests deterministic; avoid flaky timing-dependent assertions."
+          prompt+=$'\n'"- Do NOT create a PR, do NOT run 'gh pr create', do NOT push branches. The workflow will handle PR creation after you finish."
+          prompt+=$'\n'"- After each coverage measurement, write a JSON summary to /tmp/coverage_summary.json with at least: {target, totals: {lines_valid, lines_covered, coverage_percent}, files: [{path, coverage_percent}]}."
+          prompt+=$'\n\n'
+          if [ -f .github/agentics/deeptest-coverage-ubuntu-pr.md ]; then
+            prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
+          fi
+
+          echo "Invoking ${AGENT_NAME} with ${COVERAGE_TARGET}% target for changed files"
+          gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
+
+          # ── Capture newly generated / modified test files ──
+          echo "Collecting newly generated or modified test files..."
+          NEW_TEST_FILES="$(git diff --name-only --diff-filter=ACMR HEAD 2>/dev/null || true)"
+          UNTRACKED_FILES="$(git ls-files --others --exclude-standard 2>/dev/null || true)"
+          ALL_NEW_FILES="$(printf '%s\n%s' "$NEW_TEST_FILES" "$UNTRACKED_FILES" \
+            | grep -v '^$' \
+            | grep -Ev '\.(gcov|gcda|gcno|o|d)$' \
+            | grep -Ev '\.(clog\.h|lttng\.h)' \
+            | grep -Ev '^(build/|artifacts/|\.deeptest/)' \
+            | sort -u || true)"
+
+          if [ -z "$ALL_NEW_FILES" ]; then
+            echo "No new or modified files were generated by the agent."
+            printf '' > /tmp/new_test_files.txt
+          else
+            printf '%s\n' "$ALL_NEW_FILES" > /tmp/new_test_files.txt
+            echo "Generated/modified files:"
+            cat /tmp/new_test_files.txt
+          fi
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        shell: bash
+      - name: Request PR creation via safe output
+        run: |
+          set -euo pipefail
+
+          # ── Check whether the agent produced any file changes at all ──
+          if ! git status --porcelain | grep -q .; then
+            echo "No file changes detected after DeepTest agent."
+            echo "Writing noop safe output directly."
+            printf '{"type":"noop","message":"No test changes were generated for PR #%s."}\n' \
+              "$PR_NUMBER" >> "$GH_AW_SAFE_OUTPUTS"
+            exit 0
+          fi
+
+          # ── Stage all new/modified files (excluding build artifacts) ──
+          git add -A
+          git reset -- build/ artifacts/ .deeptest/ '*.gcov' '*.gcda' '*.gcno' '*.o' '*.d' || true
+
+          # ── Create a patch for the safe_outputs job to apply ──
+          git diff --cached --binary > /tmp/gh-aw/aw.patch || true
+          if [ ! -s /tmp/gh-aw/aw.patch ]; then
+            echo "No staged changes to create a patch from."
+            printf '{"type":"noop","message":"No test changes were generated for PR #%s."}\n' \
+              "$PR_NUMBER" >> "$GH_AW_SAFE_OUTPUTS"
+            exit 0
+          fi
+          echo "Patch created ($(wc -c < /tmp/gh-aw/aw.patch) bytes)"
+
+          # ── Build the list of newly generated test files ──
+          if [ -s /tmp/new_test_files.txt ]; then
+            new_files_list="$(sed 's/^/- /' /tmp/new_test_files.txt)"
+          else
+            new_files_list="$(git diff --cached --name-only | sed 's/^/- /')"
+          fi
+
+          # ── PR metadata ──
+          title="Add tests for PR #${PR_NUMBER}"
+          changed_list="$(sed 's/^/- /' /tmp/changed_files.txt 2>/dev/null || echo '(none)')"
+          coverage_info="$(cat /tmp/coverage_summary.json 2>/dev/null || echo 'Coverage summary not available.')"
+
+          body="## DeepTest Coverage — Auto-generated Tests\n\n"
+          body+="Generated tests targeting ${COVERAGE_TARGET}% line coverage for PR #${PR_NUMBER}.\n\n"
+          body+="### Source files analysed\n${changed_list}\n\n"
+          body+="### Newly generated / modified test files\n${new_files_list}\n\n"
+          body+="### Coverage summary\n\`\`\`json\n${coverage_info}\n\`\`\`\n"
+
+          echo "Writing create_pull_request safe output directly..."
+          echo "Title: $title"
+
+          # ── Write safe output entry directly to JSONL ──
+          # Use jq to properly escape all string values for valid JSON
+          jq -n -c \
+            --arg title "$title" \
+            --arg body "$body" \
+            '{"type":"create_pull_request","title":$title,"body":$body}' \
+            >> "$GH_AW_SAFE_OUTPUTS"
+
+          echo "Safe output entry written to $GH_AW_SAFE_OUTPUTS"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        shell: bash
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_SAFE_OUTPUTS: ${{ env.GH_AW_SAFE_OUTPUTS }}
+        with:
+          name: ubuntu-gcovr-coverage
+          path: |
+            artifacts/coverage/*
+            artifacts/TestResults/**
+            artifacts/logs/**
+            /tmp/changed_files.txt
+            /tmp/coverage_summary.json
       - name: Ensure log file exists
         run: |
           echo "Custom steps execution completed" >> /tmp/gh-aw/agent-stdio.log
@@ -742,7 +1072,7 @@ jobs:
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
           GH_AW_NOOP_MAX: 1
-          GH_AW_WORKFLOW_NAME: "Deeptest Ubuntu"
+          GH_AW_WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -755,7 +1085,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Deeptest Ubuntu"
+          GH_AW_WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -768,7 +1098,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Deeptest Ubuntu"
+          GH_AW_WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_CHECKOUT_PR_SUCCESS: ${{ needs.agent.outputs.checkout_pr_success }}
@@ -784,7 +1114,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Deeptest Ubuntu"
+          GH_AW_WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -801,7 +1131,7 @@ jobs:
           GH_AW_COMMENT_ID: ${{ needs.activation.outputs.comment_id }}
           GH_AW_COMMENT_REPO: ${{ needs.activation.outputs.comment_repo }}
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          GH_AW_WORKFLOW_NAME: "Deeptest Ubuntu"
+          GH_AW_WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.result }}
         with:
@@ -817,8 +1147,6 @@ jobs:
     if: needs.agent.outputs.output_types != '' || needs.agent.outputs.has_patch == 'true'
     runs-on: ubuntu-latest
     permissions: {}
-    concurrency:
-      group: "gh-aw-custom-${{ github.workflow }}"
     timeout-minutes: 10
     outputs:
       success: ${{ steps.parse_results.outputs.success }}
@@ -847,8 +1175,8 @@ jobs:
       - name: Setup threat detection
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          WORKFLOW_NAME: "Deeptest Ubuntu"
-          WORKFLOW_DESCRIPTION: "Generate tests for a user-specified source file using Copilot CLI with DeepTest custom agent"
+          WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
+          WORKFLOW_DESCRIPTION: "Generate tests for PR-changed files targeting 95% coverage (Ubuntu + gcovr)"
           HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
         with:
           script: |
@@ -860,19 +1188,278 @@ jobs:
         run: |
           mkdir -p /tmp/gh-aw/threat-detection
           touch /tmp/gh-aw/threat-detection/detection.log
+      - name: Fetch PR metadata
+        run: |
+          set -euo pipefail
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "PR_NUMBER is required" >&2
+            exit 1
+          fi
+
+          API_URL="${GITHUB_API_URL:-https://api.github.com}"
+          pr_json="$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+
+          head_ref="$(printf '%s' "$pr_json" | jq -r '.head.ref')"
+          base_ref="$(printf '%s' "$pr_json" | jq -r '.base.ref')"
+          head_sha="$(printf '%s' "$pr_json" | jq -r '.head.sha')"
+          base_sha="$(printf '%s' "$pr_json" | jq -r '.base.sha')"
+          if [ -z "$head_ref" ] || [ "$head_ref" = "null" ] || [ -z "$base_ref" ] || [ "$base_ref" = "null" ] || \
+             [ -z "$head_sha" ] || [ "$head_sha" = "null" ] || [ -z "$base_sha" ] || [ "$base_sha" = "null" ]; then
+            echo "Unable to determine PR head/base refs for PR #$PR_NUMBER" >&2
+            exit 1
+          fi
+
+          echo "PR_HEAD_REF=$head_ref" >> "$GITHUB_ENV"
+          echo "PR_BASE_REF=$base_ref" >> "$GITHUB_ENV"
+          echo "PR_HEAD_SHA=$head_sha" >> "$GITHUB_ENV"
+          echo "PR_BASE_SHA=$base_sha" >> "$GITHUB_ENV"
+          echo "PR head ref: $head_ref"
+          echo "PR base ref: $base_ref"
+          echo "PR head sha: $head_sha"
+          echo "PR base sha: $base_sha"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        shell: bash
       - name: Install Copilot CLI
         run: |
+          set -euo pipefail
           gh extension install github/gh-copilot || echo "Copilot CLI already installed"
         env:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
-      - name: Run DeepTest via Copilot CLI
+        shell: bash
+      - name: Collect changed files from PR (git diff)
         run: |
-          echo "Invoking DeepTest custom agent for: $SOURCE_FILE (Run ID: $RUN_ID)"
-          gh copilot --agent DeepTest -p "Generate comprehensive tests for the source file at $SOURCE_FILE. Analyze the file, identify testable functions, and create test cases following MsQuic test patterns in src/test/. After generating tests, create a PR with all changed files. Include the workflow run ID $RUN_ID in the PR title." --allow-all-tools
+          set -euo pipefail
+          if [ -z "${PR_NUMBER:-}" ]; then
+            echo "PR_NUMBER is required" >&2
+            exit 1
+          fi
+
+          if [ -z "${PR_BASE_SHA:-}" ] || [ -z "${PR_HEAD_SHA:-}" ]; then
+            echo "PR_BASE_SHA and PR_HEAD_SHA are required" >&2
+            exit 1
+          fi
+
+          echo "Computing changed files via git diff (PR base/head SHAs: ${PR_BASE_SHA}...${PR_HEAD_SHA})"
+          echo "INCLUDE_REGEX=${INCLUDE_REGEX}"
+          echo "EXCLUDE_REGEX=${EXCLUDE_REGEX}"
+
+          # The default Actions checkout is shallow. Triple-dot diff requires a merge-base,
+          # which may be missing unless we have enough history.
+          if [ "$(git rev-parse --is-shallow-repository 2>/dev/null || echo false)" = "true" ]; then
+            echo "Repository is shallow; fetching full history to enable merge-base computation"
+            git fetch --no-tags --prune --unshallow origin || true
+          fi
+
+          # Ensure both SHAs are present locally.
+          git fetch --no-tags --prune origin "${PR_BASE_SHA}" "${PR_HEAD_SHA}" || true
+
+          merge_base="$(git merge-base "${PR_BASE_SHA}" "${PR_HEAD_SHA}" 2>/dev/null || true)"
+          if [ -n "$merge_base" ]; then
+            echo "Merge base: $merge_base"
+            ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${merge_base}..${PR_HEAD_SHA}" || true)"
+          else
+            echo "Warning: no merge base found; falling back to two-dot diff (${PR_BASE_SHA}..${PR_HEAD_SHA})"
+            ALL_FILES="$(git diff --name-only --diff-filter=ACMRT "${PR_BASE_SHA}..${PR_HEAD_SHA}" || true)"
+          fi
+
+          if [ -z "$ALL_FILES" ]; then
+            echo "No files returned by git diff for PR #$PR_NUMBER" >&2
+            exit 1
+          fi
+
+          FILTERED_FILES="$(printf '%s\n' "$ALL_FILES" \
+            | grep -E "$INCLUDE_REGEX" \
+            | grep -Ev "$EXCLUDE_REGEX" \
+            | grep -E '\.(c|cpp|h|py)$' \
+            | head -n "$MAX_FILES" || true)"
+
+          if [ -z "$FILTERED_FILES" ]; then
+            echo "No matching .c/.cpp/.h/.py files after filters."
+          fi
+
+          printf '%s\n' "$FILTERED_FILES" > /tmp/changed_files.txt
+
+          echo "CHANGED_FILES<<EOF" >> "$GITHUB_ENV"
+          cat /tmp/changed_files.txt >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+
+          echo "Selected files:"
+          cat /tmp/changed_files.txt
         env:
           GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
           GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        shell: bash
+      - name: Prepare build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip gcc g++ jq
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user gcovr
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        shell: bash
+      - name: Prepare machine (MsQuic)
+        run: |
+          set -euo pipefail
+          pwsh ./scripts/prepare-machine.ps1 -ForBuild -Tls "$TLS"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        shell: bash
+      - name: Run DeepTest agent
+        run: |
+          set -euo pipefail
+
+          if [ -z "${COPILOT_GITHUB_TOKEN:-}" ]; then
+            echo "COPILOT_GITHUB_TOKEN secret is required" >&2
+            exit 1
+          fi
+
+          if [ ! -f /tmp/changed_files.txt ] || [ ! -s /tmp/changed_files.txt ]; then
+            echo "No matching .c/.cpp/.h/.py files were selected; skipping DeepTest."
+            printf '{"skipped": true, "reason": "no matching .c/.cpp/.h/.py files"}\n' > /tmp/coverage_summary.json
+            exit 0
+          fi
+
+          CHANGED_FILES_BULLETS="$(sed 's/^/- /' /tmp/changed_files.txt)"
+
+          prompt="You are generating tests for PR #${PR_NUMBER} in ${GITHUB_REPOSITORY}."
+          prompt+=$'\n\n'"Coverage target: ${COVERAGE_TARGET}% line coverage on the changed C/C++ files."
+          prompt+=$'\n'"Max iterations: ${MAX_ITERATIONS} (stop early once the target is met)."
+          prompt+=$'\n\n'"Changed files (filtered .c/.cpp/.py from this PR):"
+          prompt+=$'\n'"${CHANGED_FILES_BULLETS}"
+          prompt+=$'\n\n'"Build/test/coverage commands (Ubuntu):"
+          prompt+=$'\n'"- Build with coverage: CC=gcc CXX=g++ CFLAGS='--coverage -O0 -g' CXXFLAGS='--coverage -O0 -g' LDFLAGS='--coverage' pwsh ./scripts/build.ps1 -Platform linux -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -DisablePerf -DisableTools -CI"
+          prompt+=$'\n'"- Run tests: pwsh ./scripts/test.ps1 -Config ${CONFIG} -Arch ${ARCH} -Tls ${TLS} -GHA -LogProfile Full.Light"
+          prompt+=$'\n'"- Generate coverage XML: gcovr --root . --object-directory build/linux/${ARCH}_${TLS} --filter '^src/' --exclude '^src/test/' --exclude '^submodules/' --exclude '^src/generated/' --cobertura-pretty --output ${COVERAGE_XML}"
+          prompt+=$'\n\n'"Workflow:"
+          prompt+=$'\n'"1. Generate or improve tests for the changed files to increase coverage."
+          prompt+=$'\n'"2. Build with coverage instrumentation using the commands above."
+          prompt+=$'\n'"3. Run the test suite."
+          prompt+=$'\n'"4. Generate the Cobertura XML coverage report."
+          prompt+=$'\n'"5. Parse the report to compute line coverage for the changed C/C++ files."
+          prompt+=$'\n'"6. If coverage < ${COVERAGE_TARGET}%, go back to step 1 and add more tests."
+          prompt+=$'\n'"7. Repeat until coverage >= ${COVERAGE_TARGET}% or you have done ${MAX_ITERATIONS} iterations."
+          prompt+=$'\n\n'"Constraints:"
+          prompt+=$'\n'"- Prefer adding tests under src/test/. Avoid changing production code unless required for testability."
+          prompt+=$'\n'"- Keep tests deterministic; avoid flaky timing-dependent assertions."
+          prompt+=$'\n'"- Do NOT create a PR, do NOT run 'gh pr create', do NOT push branches. The workflow will handle PR creation after you finish."
+          prompt+=$'\n'"- After each coverage measurement, write a JSON summary to /tmp/coverage_summary.json with at least: {target, totals: {lines_valid, lines_covered, coverage_percent}, files: [{path, coverage_percent}]}."
+          prompt+=$'\n\n'
+          if [ -f .github/agentics/deeptest-coverage-ubuntu-pr.md ]; then
+            prompt+="$(cat .github/agentics/deeptest-coverage-ubuntu-pr.md)"
+          fi
+
+          echo "Invoking ${AGENT_NAME} with ${COVERAGE_TARGET}% target for changed files"
+          gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
+
+          # ── Capture newly generated / modified test files ──
+          echo "Collecting newly generated or modified test files..."
+          NEW_TEST_FILES="$(git diff --name-only --diff-filter=ACMR HEAD 2>/dev/null || true)"
+          UNTRACKED_FILES="$(git ls-files --others --exclude-standard 2>/dev/null || true)"
+          ALL_NEW_FILES="$(printf '%s\n%s' "$NEW_TEST_FILES" "$UNTRACKED_FILES" \
+            | grep -v '^$' \
+            | grep -Ev '\.(gcov|gcda|gcno|o|d)$' \
+            | grep -Ev '\.(clog\.h|lttng\.h)' \
+            | grep -Ev '^(build/|artifacts/|\.deeptest/)' \
+            | sort -u || true)"
+
+          if [ -z "$ALL_NEW_FILES" ]; then
+            echo "No new or modified files were generated by the agent."
+            printf '' > /tmp/new_test_files.txt
+          else
+            printf '%s\n' "$ALL_NEW_FILES" > /tmp/new_test_files.txt
+            echo "Generated/modified files:"
+            cat /tmp/new_test_files.txt
+          fi
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        shell: bash
+      - name: Request PR creation via safe output
+        run: |
+          set -euo pipefail
+
+          # ── Check whether the agent produced any file changes at all ──
+          if ! git status --porcelain | grep -q .; then
+            echo "No file changes detected after DeepTest agent."
+            echo "Writing noop safe output directly."
+            printf '{"type":"noop","message":"No test changes were generated for PR #%s."}\n' \
+              "$PR_NUMBER" >> "$GH_AW_SAFE_OUTPUTS"
+            exit 0
+          fi
+
+          # ── Stage all new/modified files (excluding build artifacts) ──
+          git add -A
+          git reset -- build/ artifacts/ .deeptest/ '*.gcov' '*.gcda' '*.gcno' '*.o' '*.d' || true
+
+          # ── Create a patch for the safe_outputs job to apply ──
+          git diff --cached --binary > /tmp/gh-aw/aw.patch || true
+          if [ ! -s /tmp/gh-aw/aw.patch ]; then
+            echo "No staged changes to create a patch from."
+            printf '{"type":"noop","message":"No test changes were generated for PR #%s."}\n' \
+              "$PR_NUMBER" >> "$GH_AW_SAFE_OUTPUTS"
+            exit 0
+          fi
+          echo "Patch created ($(wc -c < /tmp/gh-aw/aw.patch) bytes)"
+
+          # ── Build the list of newly generated test files ──
+          if [ -s /tmp/new_test_files.txt ]; then
+            new_files_list="$(sed 's/^/- /' /tmp/new_test_files.txt)"
+          else
+            new_files_list="$(git diff --cached --name-only | sed 's/^/- /')"
+          fi
+
+          # ── PR metadata ──
+          title="Add tests for PR #${PR_NUMBER}"
+          changed_list="$(sed 's/^/- /' /tmp/changed_files.txt 2>/dev/null || echo '(none)')"
+          coverage_info="$(cat /tmp/coverage_summary.json 2>/dev/null || echo 'Coverage summary not available.')"
+
+          body="## DeepTest Coverage — Auto-generated Tests\n\n"
+          body+="Generated tests targeting ${COVERAGE_TARGET}% line coverage for PR #${PR_NUMBER}.\n\n"
+          body+="### Source files analysed\n${changed_list}\n\n"
+          body+="### Newly generated / modified test files\n${new_files_list}\n\n"
+          body+="### Coverage summary\n\`\`\`json\n${coverage_info}\n\`\`\`\n"
+
+          echo "Writing create_pull_request safe output directly..."
+          echo "Title: $title"
+
+          # ── Write safe output entry directly to JSONL ──
+          # Use jq to properly escape all string values for valid JSON
+          jq -n -c \
+            --arg title "$title" \
+            --arg body "$body" \
+            '{"type":"create_pull_request","title":$title,"body":$body}' \
+            >> "$GH_AW_SAFE_OUTPUTS"
+
+          echo "Safe output entry written to $GH_AW_SAFE_OUTPUTS"
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        shell: bash
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        env:
+          GH_AW_MCP_CONFIG: /tmp/gh-aw/mcp-config/mcp-servers.json
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+        with:
+          name: ubuntu-gcovr-coverage
+          path: |
+            artifacts/coverage/*
+            artifacts/TestResults/**
+            artifacts/logs/**
+            /tmp/changed_files.txt
+            /tmp/coverage_summary.json
       - name: Ensure log file exists
         run: |
           echo "Custom steps execution completed" >> /tmp/gh-aw/threat-detection/detection.log
@@ -895,6 +1482,7 @@ jobs:
           if-no-files-found: ignore
 
   pre_activation:
+    if: (github.event_name != 'pull_request') || (github.event.pull_request.head.repo.id == github.repository_id)
     runs-on: ubuntu-slim
     outputs:
       activated: ${{ steps.check_membership.outputs.is_team_member == 'true' }}
@@ -930,8 +1518,8 @@ jobs:
     timeout-minutes: 15
     env:
       GH_AW_ENGINE_ID: "custom"
-      GH_AW_WORKFLOW_ID: "deeptest-ubuntu"
-      GH_AW_WORKFLOW_NAME: "Deeptest Ubuntu"
+      GH_AW_WORKFLOW_ID: "deeptest-coverage-ubuntu-pr"
+      GH_AW_WORKFLOW_NAME: "Deeptest Coverage Ubuntu Pr"
     outputs:
       create_discussion_error_count: ${{ steps.process_safe_outputs.outputs.create_discussion_error_count }}
       create_discussion_errors: ${{ steps.process_safe_outputs.outputs.create_discussion_errors }}
@@ -984,7 +1572,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"create_pull_request\":{\"base_branch\":\"${{ github.ref_name }}\",\"labels\":[\"automation\",\"tests\"],\"max\":1,\"max_patch_size\":1024,\"title_prefix\":\"[DeepTest Run #${{ github.run_id }}] \"},\"missing_data\":{},\"missing_tool\":{}}"
+          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"create_pull_request\":{\"base_branch\":\"${{ github.ref_name }}\",\"draft\":true,\"if_no_changes\":\"warn\",\"labels\":[\"automation\",\"tests\"],\"max\":1,\"max_patch_size\":1024,\"title_prefix\":\"[DeepTest+Coverage Ubuntu Run #${{ github.run_id }}] \"},\"missing_data\":{},\"missing_tool\":{}}"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
