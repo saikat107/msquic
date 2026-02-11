@@ -27,6 +27,7 @@
 #include "msquichelper.h"
 #include "quic_var_int.h"
 #include "../core/quicdef.h"
+#include "../core/range.h"
 #define CXPLAT_STORAGE_ENABLE_WRITE_SUPPORT
 #include "quic_storage.h"
 

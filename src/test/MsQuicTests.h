@@ -134,6 +134,40 @@ void QuicTestConnectionCloseFromCallback();
 void QuicTestAddrFunctions(const FamilyArgs& Params);
 
 //
+// Range tests
+//
+void QuicTestRangeInitUninit();
+void QuicTestRangeAddSingleValue();
+void QuicTestRangeAddMultipleAscending();
+void QuicTestRangeAddAdjacentMerge();
+void QuicTestRangeAddContiguousRange();
+void QuicTestRangeAddOverlappingRange();
+void QuicTestRangeAddSubsumesMultiple();
+void QuicTestRangeRemoveMiddleSplit();
+void QuicTestRangeRemoveLeftEdge();
+void QuicTestRangeRemoveRightEdge();
+void QuicTestRangeRemoveFull();
+void QuicTestRangeRemoveNonExistent();
+void QuicTestRangeSetMinAtBoundary();
+void QuicTestRangeSetMinInMiddle();
+void QuicTestRangeSetMinAboveAll();
+void QuicTestRangeSetMinBelowAll();
+void QuicTestRangeReset();
+void QuicTestRangeEmptyQueries();
+void QuicTestRangeAddDuplicate();
+void QuicTestRangeCompactAdjacent();
+void QuicTestRangeGrowAllocation();
+void QuicTestRangeShrinkAllocation();
+void QuicTestRangeShrinkToPreAlloc();
+void QuicTestRangeMaxCapacity();
+void QuicTestRangeAddDescending();
+void QuicTestRangeGetRangeLastFlag();
+void QuicTestRangeLargeCount();
+void QuicTestRangeCompactNoOp();
+void QuicTestRangeGetSafe();
+void QuicTestRangeRemoveSpanningMultiple();
+
+//
 // MTU tests
 //
 void QuicTestMtuSettings();
