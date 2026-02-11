@@ -120,6 +120,40 @@ void QuicTestValidateStreamEvents(const ValidateStreamEventArgs& Params);
 //
 
 void QuicTestRegistrationOpenClose();
+
+//
+// QUIC_RANGE Tests
+//
+void QuicTestRangeInitAndUninit();
+void QuicTestRangeAddValuesAscending();
+void QuicTestRangeAddValuesDescending();
+void QuicTestRangeAddNonAdjacentValues();
+void QuicTestRangeAddRangeContiguous();
+void QuicTestRangeAddOverlappingRanges();
+void QuicTestRangeAddAdjacentRanges();
+void QuicTestRangeQueryNonExisting();
+void QuicTestRangeReset();
+void QuicTestRangeRemoveMiddle();
+void QuicTestRangeRemoveBeginning();
+void QuicTestRangeRemoveEnd();
+void QuicTestRangeRemoveEntire();
+void QuicTestRangeRemoveNonExisting();
+void QuicTestRangeSetMin();
+void QuicTestRangeSetMinRemoveAll();
+void QuicTestRangeGetMinMax();
+void QuicTestRangeGetMinMaxEmpty();
+void QuicTestRangeGrowth();
+void QuicTestRangeCompactNoOp();
+void QuicTestRangeCompactMergeAdjacent();
+void QuicTestRangeCompactMergeOverlapping();
+void QuicTestRangeCompactWithShrink();
+void QuicTestRangeShrinkToInitial();
+void QuicTestRangeShrinkCustomSize();
+void QuicTestRangeRemoveSubrangesShrink();
+void QuicTestRangeLargeStressTest();
+void QuicTestRangeBoundaryValues();
+void QuicTestRangeAlternatingAddRemove();
+void QuicTestRangeMaxAllocSizeLimit();
 void QuicTestCreateListener();
 void QuicTestStartListener();
 void QuicTestStartListenerMultiAlpns();
