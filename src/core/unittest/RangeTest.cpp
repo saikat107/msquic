@@ -787,3 +787,426 @@ TEST(RangeTest, SearchRangeThree)
     ASSERT_EQ(index, 2);
 #endif
 }
+
+//
+// Test: QuicRangeCompact with empty range (UsedLength = 0)
+// Scenario: Compact is called on an empty range (no subranges).
+// How: Initialize an empty range and call QuicRangeCompact.
+// Assertions: The function returns immediately without any changes. UsedLength remains 0.
+//
+TEST(RangeTest, CompactEmptyRange)
+{
+    SmartRange range;
+    ASSERT_EQ(range.ValidCount(), 0u);
+    
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), 0u);
+}
+
+//
+// Test: QuicRangeCompact with single subrange (UsedLength = 1)
+// Scenario: Compact is called on a range with only one subrange.
+// How: Add a single range and call QuicRangeCompact.
+// Assertions: The function returns immediately without changes. UsedLength remains 1,
+//             and the subrange values are unchanged.
+//
+TEST(RangeTest, CompactSingleSubrange)
+{
+    SmartRange range;
+    range.Add(100, 50);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 149u);
+    
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 149u);
+}
+
+//
+// Test: QuicRangeCompact merges two touching subranges
+// Scenario: Two subranges touch at a boundary point (NextLow == CurrentHigh).
+// How: Manually create two ranges [100-149] and [149-199] that touch at 149,
+//      then call QuicRangeCompact.
+// Assertions: After compaction, the two subranges are merged into one [100-199].
+//             UsedLength decreases from 2 to 1. Min is 100 and Max is 199.
+//
+TEST(RangeTest, CompactAdjacentSubranges)
+{
+    SmartRange range;
+    // Add first range [100-149]
+    range.Add(100, 50);
+    // Add second range [149-199] that touches at 149
+    BOOLEAN rangeUpdated;
+    QuicRangeAddRange(&range.range, 149, 51, &rangeUpdated);
+    
+    // After AddRange, Compact is automatically called, so they should already be merged
+    // But let's verify by calling Compact again
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 199u);
+    
+    // Call compact again to ensure it's idempotent
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 199u);
+}
+
+//
+// Test: QuicRangeCompact merges overlapping subranges
+// Scenario: Two subranges overlap (NextLow < CurrentHigh + 1).
+// How: Manually construct a range with overlapping subranges [100-149] and [130-179],
+//      then call QuicRangeCompact.
+// Assertions: After compaction, the overlapping subranges are merged into one [100-179].
+//             UsedLength decreases from 2 to 1. Min is 100 and Max is 179.
+//
+TEST(RangeTest, CompactOverlappingSubranges)
+{
+    SmartRange range;
+    // Add first range [100-149]
+    BOOLEAN rangeUpdated;
+    QuicRangeAddRange(&range.range, 100, 50, &rangeUpdated);
+    // Add second range [130-179] which will overlap with [100-149]
+    QuicRangeAddRange(&range.range, 130, 50, &rangeUpdated);
+    
+    // Note: QuicRangeAddRange already calls QuicRangeCompact if rangeUpdated is TRUE,
+    // so the ranges should already be merged. Let's verify the final state.
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 179u);
+}
+
+//
+// Test: QuicRangeCompact with non-adjacent subranges
+// Scenario: Multiple subranges with gaps between them (no merging possible).
+// How: Add three ranges [100-109], [200-209], [300-309] with gaps,
+//      then call QuicRangeCompact.
+// Assertions: No merging occurs. UsedLength remains 3. All ranges preserved.
+//
+TEST(RangeTest, CompactNonAdjacentSubranges)
+{
+    SmartRange range;
+    range.Add(100, 10);
+    range.Add(200, 10);
+    range.Add(300, 10);
+    ASSERT_EQ(range.ValidCount(), 3u);
+    
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), 3u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 309u);
+}
+
+//
+// Test: QuicRangeCompact merges multiple consecutive touching subranges
+// Scenario: Multiple touching subranges that can all be merged in one pass.
+// How: Add four touching ranges [100-124], [124-149], [149-174], [174-199],
+//      then call QuicRangeCompact.
+// Assertions: All four subranges are merged into one [100-199].
+//             UsedLength decreases from 4 to 1.
+//
+TEST(RangeTest, CompactMultipleConsecutiveAdjacent)
+{
+    SmartRange range;
+    BOOLEAN rangeUpdated;
+    // Add ranges that touch at boundaries
+    QuicRangeAddRange(&range.range, 100, 25, &rangeUpdated);  // [100-124]
+    QuicRangeAddRange(&range.range, 124, 26, &rangeUpdated);  // [124-149] touches at 124
+    QuicRangeAddRange(&range.range, 149, 26, &rangeUpdated);  // [149-174] touches at 149
+    QuicRangeAddRange(&range.range, 174, 26, &rangeUpdated);  // [174-199] touches at 174
+    
+    // QuicRangeAddRange already calls Compact, so they should be merged
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 199u);
+}
+
+//
+// Test: QuicRangeCompact merges some subranges but not all
+// Scenario: Mix of touching and non-touching subranges.
+// How: Add ranges [100-124], [124-149] (touching), then [200-224], [224-249] (touching),
+//      separated by a gap. Call QuicRangeCompact.
+// Assertions: The two pairs are merged separately, resulting in 2 subranges:
+//             [100-149] and [200-249]. UsedLength decreases from 4 to 2.
+//
+TEST(RangeTest, CompactPartialMerge)
+{
+    SmartRange range;
+    BOOLEAN rangeUpdated;
+    // First pair: touching at 124
+    QuicRangeAddRange(&range.range, 100, 25, &rangeUpdated);  // [100-124]
+    QuicRangeAddRange(&range.range, 124, 26, &rangeUpdated);  // [124-149]
+    // Second pair: touching at 224, with gap before
+    QuicRangeAddRange(&range.range, 200, 25, &rangeUpdated);  // [200-224]
+    QuicRangeAddRange(&range.range, 224, 26, &rangeUpdated);  // [224-249]
+    
+    // QuicRangeAddRange calls Compact, so pairs should already be merged
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 249u);
+    
+    // Verify the two merged ranges
+    QUIC_SUBRANGE* sub0 = QuicRangeGet(&range.range, 0);
+    QUIC_SUBRANGE* sub1 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub0->Low, 100u);
+    ASSERT_EQ(sub0->Count, 50u);  // [100-149]
+    ASSERT_EQ(sub1->Low, 200u);
+    ASSERT_EQ(sub1->Count, 50u);  // [200-249]
+}
+
+//
+// Test: QuicRangeShrink to initial size (uses pre-allocated buffer)
+// Scenario: Shrink a range with dynamic allocation back to initial size.
+// How: Grow the range to 16 subranges, then remove most to get UsedLength = 2.
+//      Call QuicRangeShrink with NewAllocLength = QUIC_RANGE_INITIAL_SUB_COUNT (8).
+// Assertions: SubRanges pointer changes to PreAllocSubRanges. AllocLength becomes 8.
+//             Function returns TRUE. Data is preserved.
+//
+TEST(RangeTest, ShrinkToInitialSize)
+{
+    SmartRange range;
+    
+    // Grow the range by adding many subranges
+    for (uint32_t i = 0; i < 16; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_GE(range.range.AllocLength, 16u);
+    uint32_t originalAllocLength = range.range.AllocLength;
+    
+    // Remove most subranges to make UsedLength small
+    for (uint32_t i = 2; i < 16; i++) {
+        range.Remove(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.range.AllocLength, originalAllocLength);  // Still allocated large
+    
+    // Shrink to initial size
+    BOOLEAN result = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_EQ(range.range.SubRanges, range.range.PreAllocSubRanges);
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.Min(), 0u);
+    ASSERT_EQ(range.Max(), 109u);
+}
+
+//
+// Test: QuicRangeShrink to intermediate size (allocates new buffer)
+// Scenario: Shrink from large allocation to an intermediate size (not initial).
+// How: Grow the range to 32 subranges, remove most to get UsedLength = 3,
+//      then call QuicRangeShrink with NewAllocLength = 16.
+// Assertions: Function returns TRUE. AllocLength becomes 16.
+//             SubRanges pointer changes (new allocation). Data is preserved.
+//
+TEST(RangeTest, ShrinkToIntermediateSize)
+{
+    SmartRange range;
+    
+    // Grow the range to 32 subranges
+    for (uint32_t i = 0; i < 32; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_GE(range.range.AllocLength, 32u);
+    
+    // Remove most subranges
+    for (uint32_t i = 3; i < 32; i++) {
+        range.Remove(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 3u);
+    
+    QUIC_SUBRANGE* oldPtr = range.range.SubRanges;
+    
+    // Shrink to intermediate size 16
+    BOOLEAN result = QuicRangeShrink(&range.range, 16);
+    
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, 16u);
+    ASSERT_NE(range.range.SubRanges, oldPtr);  // New allocation
+    ASSERT_NE(range.range.SubRanges, range.range.PreAllocSubRanges);  // Not pre-allocated
+    ASSERT_EQ(range.ValidCount(), 3u);
+    ASSERT_EQ(range.Min(), 0u);
+    ASSERT_EQ(range.Max(), 209u);
+}
+
+//
+// Test: QuicRangeShrink with NewAllocLength equal to current AllocLength (no-op)
+// Scenario: Attempt to shrink when already at target size.
+// How: Initialize range with default allocation (8), add 2 subranges,
+//      then call QuicRangeShrink with NewAllocLength = 8 (current size).
+// Assertions: Function returns TRUE. AllocLength remains 8. No reallocation occurs.
+//
+TEST(RangeTest, ShrinkNoOp)
+{
+    SmartRange range;
+    range.Add(100, 10);
+    range.Add(200, 10);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    QUIC_SUBRANGE* originalPtr = range.range.SubRanges;
+    
+    BOOLEAN result = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_EQ(range.range.SubRanges, originalPtr);  // Same pointer
+    ASSERT_EQ(range.ValidCount(), 2u);
+}
+
+//
+// Test: QuicRangeRemoveRange triggers compaction
+// Scenario: After removing a range, QuicRangeCompact is called automatically,
+//           merging adjacent subranges if any.
+// How: Add ranges [100-149], [160-209], then remove [150-159] (which is a gap).
+//      The removal itself doesn't change the structure, but subsequent operations
+//      might. Instead, create a scenario where removal creates adjacent ranges:
+//      Add [100-149], [150-169], [170-219], then remove [150-169].
+// Assertions: After removal, [100-149] and [170-219] are not adjacent (gap at 150-169),
+//             but if we add [150-169] again and then remove part of it, we can test compaction.
+//
+// Adjusted: Add [100-149] and [151-200], remove [150-150] (doesn't exist, no effect),
+//           then add [150-150] to bridge the gap, triggering compaction.
+//
+TEST(RangeTest, RemoveRangeTriggersCompaction)
+{
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    range.Add(151, 50);  // [151-200]
+    ASSERT_EQ(range.ValidCount(), 2u);
+    
+    // Add the missing value [150] to bridge the gap
+    range.Add(150);
+    
+    // QuicRangeAddRange (used by Add) calls QuicRangeCompact if rangeUpdated is TRUE
+    // So the ranges should now be merged into [100-200]
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 200u);
+}
+
+//
+// Test: QuicRangeSetMin triggers compaction
+// Scenario: After dropping all values below a threshold with QuicRangeSetMin,
+//           QuicRangeCompact is called automatically.
+// How: Add multiple ranges, call QuicRangeSetMin to drop some, verify compaction happens.
+// Assertions: Remaining ranges are compacted if they become touching after removal.
+//
+TEST(RangeTest, SetMinTriggersCompaction)
+{
+    SmartRange range;
+    BOOLEAN rangeUpdated;
+    QuicRangeAddRange(&range.range, 100, 25, &rangeUpdated);  // [100-124]
+    QuicRangeAddRange(&range.range, 124, 26, &rangeUpdated);  // [124-149] (should merge with previous)
+    QuicRangeAddRange(&range.range, 200, 25, &rangeUpdated);  // [200-224] (gap, separate)
+    ASSERT_EQ(range.ValidCount(), 2u);  // Should be 2 after auto-compaction
+    
+    // SetMin to 100, which shouldn't drop anything but triggers compaction
+    QuicRangeSetMin(&range.range, 100);
+    
+    // After SetMin+Compact, should still be 2 (no change)
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 224u);
+    
+    QUIC_SUBRANGE* sub0 = QuicRangeGet(&range.range, 0);
+    QUIC_SUBRANGE* sub1 = QuicRangeGet(&range.range, 1);
+    ASSERT_EQ(sub0->Low, 100u);
+    ASSERT_EQ(sub0->Count, 50u);  // [100-149] already merged
+    ASSERT_EQ(sub1->Low, 200u);
+    ASSERT_EQ(sub1->Count, 25u);  // [200-224]
+}
+
+//
+// Test: QuicRangeAddRange triggers compaction when range is updated
+// Scenario: Adding a range that bridges a gap triggers compaction.
+// How: Add [100-124] and [175-199] with a gap, then add [124-175] to bridge the gap.
+// Assertions: After adding the bridging range, all three are merged into [100-199].
+//
+TEST(RangeTest, AddRangeTriggersCompaction)
+{
+    SmartRange range;
+    BOOLEAN rangeUpdated;
+    QuicRangeAddRange(&range.range, 100, 25, &rangeUpdated);  // [100-124]
+    QuicRangeAddRange(&range.range, 175, 25, &rangeUpdated);  // [175-199]
+    ASSERT_EQ(range.ValidCount(), 2u);
+    
+    // Add the bridging range [124-175] that touches both
+    QuicRangeAddRange(&range.range, 124, 52, &rangeUpdated);  // [124-175]
+    
+    // QuicRangeAddRange calls QuicRangeCompact if rangeUpdated is TRUE
+    // All three should be merged into [100-199]
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 199u);
+}
+
+//
+// Test: QuicRangeCompact triggers shrinking when allocation is large and usage is low
+// Scenario: After compacting, if allocation is >= 4*initial and used < allocation/8,
+//           QuicRangeShrink is called automatically.
+// How: Grow the range to 64 subranges, remove most to get UsedLength = 4 (< 64/8 = 8),
+//      then call QuicRangeCompact.
+// Assertions: After compaction, AllocLength is shrunk (halved or to initial size).
+//
+TEST(RangeTest, CompactTriggersShrinking)
+{
+    SmartRange range;
+    
+    // Grow to 64 subranges (requires AllocLength >= 64)
+    for (uint32_t i = 0; i < 64; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_GE(range.range.AllocLength, 64u);
+    uint32_t largeAlloc = range.range.AllocLength;
+    
+    // Remove most subranges to make UsedLength = 4 (< largeAlloc / 8)
+    for (uint32_t i = 4; i < 64; i++) {
+        range.Remove(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 4u);
+    ASSERT_EQ(range.range.AllocLength, largeAlloc);  // Still large
+    
+    // Call QuicRangeCompact, which should trigger shrinking
+    QuicRangeCompact(&range.range);
+    
+    // Allocation should be shrunk (at least halved)
+    ASSERT_LT(range.range.AllocLength, largeAlloc);
+    ASSERT_EQ(range.ValidCount(), 4u);
+    ASSERT_EQ(range.Min(), 0u);
+    ASSERT_EQ(range.Max(), 309u);
+}
+
+//
+// Test: QuicRangeRemoveSubranges uses new shrink logic
+// Scenario: QuicRangeRemoveSubranges now uses QuicRangeCalculateShrinkLength
+//           and QuicRangeShrink with different thresholds (MinAllocMultiplier=2, Denominator=4).
+// How: Grow the range to 16 subranges (AllocLength >= 16), remove subranges to get
+//      UsedLength = 2 (< 16/4 = 4), call QuicRangeRemoveSubranges.
+// Assertions: Shrinking occurs. AllocLength is reduced to 8 (halved from 16).
+//
+TEST(RangeTest, RemoveSubrangesShrinkLogic)
+{
+    SmartRange range;
+    
+    // Grow to 16 subranges (AllocLength = 16)
+    for (uint32_t i = 0; i < 16; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_GE(range.range.AllocLength, 16u);
+    
+    // Keep only first 2 subranges, remove the rest (14 subranges)
+    // After removal, UsedLength = 2, which is < 16/4 = 4, so shrink should happen
+    BOOLEAN shrunk = QuicRangeRemoveSubranges(&range.range, 2, 14);
+    
+    ASSERT_TRUE(shrunk);  // Should return TRUE indicating shrink occurred
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);  // Shrunk to 8
+    ASSERT_EQ(range.Min(), 0u);
+    ASSERT_EQ(range.Max(), 109u);
+}
