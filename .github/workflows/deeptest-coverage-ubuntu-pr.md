@@ -278,17 +278,31 @@ engine:
         # ── Check whether the agent produced any file changes at all ──
         if ! git status --porcelain | grep -q .; then
           echo "No file changes detected after DeepTest agent."
-          echo "Calling noop safe output."
-          prompt="There are no file changes to commit. Please call the noop safe output tool with message: 'No test changes were generated for PR #${PR_NUMBER}.'"
-          gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
+          echo "Writing noop safe output directly."
+          printf '{"type":"noop","message":"No test changes were generated for PR #%s."}\n' \
+            "$PR_NUMBER" >> "$GH_AW_SAFE_OUTPUTS"
           exit 0
         fi
+
+        # ── Stage all new/modified files (excluding build artifacts) ──
+        git add -A
+        git reset -- build/ artifacts/ .deeptest/ '*.gcov' '*.gcda' '*.gcno' '*.o' '*.d' || true
+
+        # ── Create a patch for the safe_outputs job to apply ──
+        git diff --cached --binary > /tmp/gh-aw/aw.patch || true
+        if [ ! -s /tmp/gh-aw/aw.patch ]; then
+          echo "No staged changes to create a patch from."
+          printf '{"type":"noop","message":"No test changes were generated for PR #%s."}\n' \
+            "$PR_NUMBER" >> "$GH_AW_SAFE_OUTPUTS"
+          exit 0
+        fi
+        echo "Patch created ($(wc -c < /tmp/gh-aw/aw.patch) bytes)"
 
         # ── Build the list of newly generated test files ──
         if [ -s /tmp/new_test_files.txt ]; then
           new_files_list="$(sed 's/^/- /' /tmp/new_test_files.txt)"
         else
-          new_files_list="$(git status --porcelain | awk '{print "- " $2}')"
+          new_files_list="$(git diff --cached --name-only | sed 's/^/- /')"
         fi
 
         # ── PR metadata ──
@@ -302,20 +316,18 @@ engine:
         body+="### Newly generated / modified test files\n${new_files_list}\n\n"
         body+="### Coverage summary\n\`\`\`json\n${coverage_info}\n\`\`\`\n"
 
-        echo "Requesting PR creation via safe output tool..."
+        echo "Writing create_pull_request safe output directly..."
         echo "Title: $title"
-        echo "New test files:"
-        echo "$new_files_list"
 
-        prompt="STOP. DO NOT generate tests. DO NOT read source files. DO NOT build code. DO NOT use any skill."
-        prompt+=$'\n'"Your ONLY task right now is to call the create_pull_request safe output tool."
-        prompt+=$'\n'"Do NOT use gh pr create. Do NOT use git push. Do NOT commit anything."
-        prompt+=$'\n\n'"Call the create_pull_request tool with EXACTLY these parameters:"
-        prompt+=$'\n'"title: ${title}"
-        prompt+=$'\n'"body: ${body}"
-        prompt+=$'\n\n'"After calling create_pull_request, call the noop tool with message: 'PR creation requested for run #${RUN_ID}'."
-        prompt+=$'\n'"Do NOTHING else. Do not generate code. Do not analyze files."
-        gh copilot --agent "$AGENT_NAME" --allow-all-tools -p "$prompt"
+        # ── Write safe output entry directly to JSONL ──
+        # Use jq to properly escape all string values for valid JSON
+        jq -n -c \
+          --arg title "$title" \
+          --arg body "$body" \
+          '{"type":"create_pull_request","title":$title,"body":$body}' \
+          >> "$GH_AW_SAFE_OUTPUTS"
+
+        echo "Safe output entry written to $GH_AW_SAFE_OUTPUTS"
 
     - name: Upload coverage artifacts
       uses: actions/upload-artifact@v4
