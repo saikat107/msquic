@@ -79,18 +79,6 @@ QuicConnLogCubic(
         Cubic->WindowLastMax);
 }
 
-//
-// Standalone helper for ad-hoc CUBIC state logging.
-//
-_IRQL_requires_max_(DISPATCH_LEVEL)
-void
-QuicConnLogCubicDebug(
-    _In_ const QUIC_CONNECTION* const Connection
-    )
-{
-    QuicConnLogCubic(Connection);
-}
-
 void
 CubicCongestionHyStartChangeState(
     _In_ QUIC_CONGESTION_CONTROL* Cc,
@@ -123,7 +111,6 @@ CubicCongestionHyStartChangeState(
             Cubic->SlowStartThreshold);
 
         Cubic->HyStartState = NewHyStartState;
-        QuicConnLogCubic(Connection);
     }
 }
 
@@ -835,6 +822,15 @@ CubicCongestionControlOnSpuriousCongestionEvent(
     return Result;
 }
 
+_IRQL_requires_max_(DISPATCH_LEVEL)
+BOOLEAN
+CubicCongestionControlIsInSlowStart(
+    _In_ const QUIC_CONGESTION_CONTROL* Cc
+    )
+{
+    return Cc->Cubic.CongestionWindow < Cc->Cubic.SlowStartThreshold;
+}
+
 void
 CubicCongestionControlLogOutFlowStatus(
     _In_ const QUIC_CONGESTION_CONTROL* Cc
@@ -843,6 +839,9 @@ CubicCongestionControlLogOutFlowStatus(
     const QUIC_CONNECTION* Connection = QuicCongestionControlGetConnection(Cc);
     const QUIC_PATH* Path = &Connection->Paths[0];
     const QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Cc->Cubic;
+
+    BOOLEAN InSlowStart = CubicCongestionControlIsInSlowStart(Cc);
+    UNREFERENCED_PARAMETER(InSlowStart); // Used for debugging/tracing context
 
     QuicTraceEvent(
         ConnOutFlowStatsV2,
@@ -856,19 +855,6 @@ CubicCongestionControlLogOutFlowStatus(
         Connection->SendBuffer.PostedBytes,
         Path->GotFirstRttSample ? Path->SmoothedRtt : 0,
         Path->OneWayDelay);
-}
-
-_IRQL_requires_max_(DISPATCH_LEVEL)
-void
-CubicCongestionControlGetLogState(
-    _In_ const QUIC_CONGESTION_CONTROL* Cc,
-    _Out_ QUIC_CUBIC_LOG_STATE* State
-    )
-{
-    const QUIC_CONGESTION_CONTROL_CUBIC* Cubic = &Cc->Cubic;
-    State->CongestionWindow = Cubic->CongestionWindow;
-    State->SlowStartThreshold = Cubic->SlowStartThreshold;
-    State->BytesInFlight = Cubic->BytesInFlight;
 }
 
 uint32_t
