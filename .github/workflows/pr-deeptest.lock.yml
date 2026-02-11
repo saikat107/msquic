@@ -21,16 +21,16 @@
 #
 # DeepTest end to end workflow
 #
-# frontmatter-hash: fef1e5ab9ad911b5ac56c021c253997042f144da49bea3b3f289230c70327954
+# frontmatter-hash: bf5ee4e3ebd8643377896e7b06ae0e8b42f0359223fbf1a8ce8f23db4cb05ae0
 
 name: "DeepTest end to end workflow"
 "on":
   pull_request:
+    branches:
+    - master
     types:
     - opened
     - synchronize
-    branches:
-    - master
 
 permissions: {}
 
@@ -74,10 +74,7 @@ jobs:
             await main();
 
   agent:
-    needs:
-      - activation
-      - list-files
-      - resolve-params-for-list-pr-files
+    needs: activation
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -110,11 +107,11 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           fetch-depth: 1
-      - name: Download PR Files List
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # fa0a91b85d4f404e444e00e005971372dc801d16
-        with:
-          name: pr-files-list
-          path: ${{ env.GH_AW_DIR }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        name: Collect PR changed files
+        run: "set -euo pipefail\nPR=\"${{ env.PR_NUMBER }}\"\nREPO=\"${{ env.PR_REPO }}\"\nFILTER=\"${{ env.FILTER }}\"\nAPI_URL=\"${GITHUB_API_URL:-https://api.github.com}\"\nOUT=\"${{ env.PR_FILES_PATH }}\"\nmkdir -p \"$(dirname \"$OUT\")\"\n\n: > /tmp/pr_files_raw.json\npage=1\nwhile :; do\n  resp=\"$(curl -fsSL \\\n    -H \"Authorization: Bearer $GH_TOKEN\" \\\n    -H \"Accept: application/vnd.github+json\" \\\n    -H \"X-GitHub-Api-Version: 2022-11-28\" \\\n    \"$API_URL/repos/$REPO/pulls/$PR/files?per_page=100&page=$page\")\"\n  count=\"$(printf '%s' \"$resp\" | jq 'length')\"\n  if [ \"${count:-0}\" -eq 0 ]; then break; fi\n  printf '%s' \"$resp\" >> /tmp/pr_files_raw.json\n  page=$((page+1))\ndone\n\n# Build the JSON array expected by the agent: [{path, status}, ...]\njq -s 'add // [] | [.[] | {path: .filename, status: .status}]\n       | if \"'$FILTER'\" != \"\" then [.[] | select(.path | test(\"'$FILTER'\"))] else . end' \\\n  /tmp/pr_files_raw.json > \"$OUT\"\n\necho \"Collected $(jq length \"$OUT\") files for PR #$PR:\"\njq -r '.[] | \"  \\(.status)  \\(.path)\"' \"$OUT\"\n"
+        shell: bash
 
       - name: Configure Git credentials
         env:
@@ -606,7 +603,7 @@ jobs:
       - name: Execute GitHub Copilot CLI
         id: agentic_execution
         # Copilot CLI tool arguments (sorted):
-        timeout-minutes: 60
+        timeout-minutes: 20
         run: |
           set -o pipefail
           GH_AW_TOOL_BINS=""; command -v go >/dev/null 2>&1 && GH_AW_TOOL_BINS="$(go env GOROOT)/bin:$GH_AW_TOOL_BINS"; [ -n "$JAVA_HOME" ] && GH_AW_TOOL_BINS="$JAVA_HOME/bin:$GH_AW_TOOL_BINS"; [ -n "$CARGO_HOME" ] && GH_AW_TOOL_BINS="$CARGO_HOME/bin:$GH_AW_TOOL_BINS"; [ -n "$GEM_HOME" ] && GH_AW_TOOL_BINS="$GEM_HOME/bin:$GH_AW_TOOL_BINS"; [ -n "$CONDA" ] && GH_AW_TOOL_BINS="$CONDA/bin:$GH_AW_TOOL_BINS"; [ -n "$PIPX_BIN_DIR" ] && GH_AW_TOOL_BINS="$PIPX_BIN_DIR:$GH_AW_TOOL_BINS"; [ -n "$SWIFT_PATH" ] && GH_AW_TOOL_BINS="$SWIFT_PATH:$GH_AW_TOOL_BINS"; [ -n "$DOTNET_ROOT" ] && GH_AW_TOOL_BINS="$DOTNET_ROOT:$GH_AW_TOOL_BINS"; export GH_AW_TOOL_BINS
@@ -975,32 +972,6 @@ jobs:
           name: threat-detection.log
           path: /tmp/gh-aw/threat-detection/detection.log
           if-no-files-found: ignore
-
-  list-files:
-    needs: resolve-params-for-list-pr-files
-    permissions:
-      contents: read
-      pull-requests: read
-
-    uses: ./.github/workflows/list-pr-files.yml
-    with:
-      filter: ${{ needs.resolve-params-for-list-pr-files.outputs.filter }}
-      pr_number: ${{ fromJSON(needs.resolve-params-for-list-pr-files.outputs.pr_number) }}
-      repo: ${{ needs.resolve-params-for-list-pr-files.outputs.pr_repo }}
-
-  resolve-params-for-list-pr-files:
-    needs: activation
-    runs-on: ubuntu-slim
-    permissions:
-      contents: read
-
-    outputs:
-      filter: ${{ env.FILTER }}
-      pr_number: ${{ env.PR_NUMBER }}
-      pr_repo: ${{ env.PR_REPO }}
-    steps:
-      - name: Export params
-        run: echo "Resolved pr_number, pr_repo, filter"
 
   safe_outputs:
     needs:
