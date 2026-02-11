@@ -2,7 +2,7 @@
 description: DeepTest end to end workflow (push to master)
 on:
   push:
-    branches: [master]
+    branches: [dennys/integration]
     paths:
       - 'src/**'
 permissions:
