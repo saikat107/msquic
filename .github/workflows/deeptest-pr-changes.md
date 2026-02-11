@@ -1,8 +1,6 @@
 ---
 description: Generate tests for the files changed in a PR using Copilot CLI with the DeepTest custom agent
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:

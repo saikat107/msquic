@@ -1,11 +1,6 @@
 name: Validate gh-aw lockfiles
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/**/*.md"
-      - ".github/workflows/**/*.lock.yml"
-      - ".github/aw/**"
   workflow_dispatch: {}
 
 permissions:
