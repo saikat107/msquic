@@ -154,6 +154,36 @@ QuicTestLocalPathChanges(
     );
 
 //
+// Range (core utility) tests
+//
+void QuicTestRangeInitialization();
+void QuicTestRangeAddSingleValue();
+void QuicTestRangeAddMultipleNonAdjacentValues();
+void QuicTestRangeAddContiguousRange();
+void QuicTestRangeAddRangeMergesAdjacent();
+void QuicTestRangeAddRangeMergesOverlapping();
+void QuicTestRangeRemoveSingleValue();
+void QuicTestRangeRemoveMiddleSplitsSubrange();
+void QuicTestRangeRemoveEntireSubrange();
+void QuicTestRangeReset();
+void QuicTestRangeGetMin();
+void QuicTestRangeGetMinSafeEmpty();
+void QuicTestRangeGetMinSafeNonEmpty();
+void QuicTestRangeGetMax();
+void QuicTestRangeGetMaxSafeEmpty();
+void QuicTestRangeGetMaxSafeNonEmpty();
+void QuicTestRangeSetMin();
+void QuicTestRangeSetMinPartialRemoval();
+void QuicTestRangeCompactMultipleAdjacent();
+void QuicTestRangeShrinkExplicit();
+void QuicTestRangeShrinkToPreallocated();
+void QuicTestRangeAddDuplicateValue();
+void QuicTestRangeRemoveNonExistent();
+void QuicTestRangeGetRangeIsLastRange();
+void QuicTestRangeLargeScale();
+void QuicTestRangeHighBoundaryValues();
+
+//
 // Handshake Tests
 //
 
