@@ -21,16 +21,10 @@
 #
 # Run Windows PR tests with OpenCppCoverage and upload coverage artifacts
 #
-# frontmatter-hash: 77ae32795999c3ec829f26ebfc3e353fd3725e50de1da76124905138e1128d53
+# frontmatter-hash: a8101f0469132730d0a0c71b5fdf95ec91b8ee905a42f32e6d632e017b5ce956
 
 name: "Coverage Windows Pr"
 "on":
-  pull_request:
-    types:
-    - opened
-    - synchronize
-    - reopened
-    - ready_for_review
   workflow_dispatch:
     inputs:
       arch:
@@ -76,8 +70,7 @@ name: "Coverage Windows Pr"
 permissions: {}
 
 concurrency:
-  group: "gh-aw-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
-  cancel-in-progress: true
+  group: "gh-aw-${{ github.workflow }}"
 
 run-name: "Coverage Windows Pr"
 
@@ -98,9 +91,6 @@ env:
 
 jobs:
   activation:
-    needs: pre_activation
-    if: >
-      (needs.pre_activation.outputs.activated == 'true') && ((github.event_name != 'pull_request') || (github.event.pull_request.head.repo.id == github.repository_id))
     runs-on: ubuntu-slim
     permissions:
       contents: read
@@ -130,6 +120,8 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
+    concurrency:
+      group: "gh-aw-custom-${{ github.workflow }}"
     env:
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       GH_AW_ASSETS_ALLOWED_EXTS: ""
@@ -146,68 +138,10 @@ jobs:
       output: ${{ steps.collect_output.outputs.output }}
       output_types: ${{ steps.collect_output.outputs.output_types }}
     steps:
-      - name: Checkout gh-aw actions folder
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
-        with:
-          repository: github/gh-aw
-          sparse-checkout: |
-            actions
-            prompts
-            .github/aw/prompts
-          path: gh-aw-actions-source
-          fetch-depth: 1
-          persist-credentials: false
       - name: Setup Scripts
-        shell: bash
-        env:
-          INPUT_DESTINATION: /opt/gh-aw/actions
-        run: bash gh-aw-actions-source/actions/setup/setup.sh
-      - name: Install gh-aw prompts
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p /opt/gh-aw/prompts
-
-          if [ -d "gh-aw-actions-source/prompts" ]; then
-            cp -R gh-aw-actions-source/prompts/* /opt/gh-aw/prompts/
-          elif [ -d "gh-aw-actions-source/.github/aw/prompts" ]; then
-            cp -R gh-aw-actions-source/.github/aw/prompts/* /opt/gh-aw/prompts/
-          else
-            # Fallback: minimal prompt assets to keep downstream steps working.
-            printf '%s\n' \
-              'You may use /tmp for temporary files. Do not assume persistence.' \
-              > /opt/gh-aw/prompts/temp_folder_prompt.md
-            printf '%s\n' \
-              'When producing structured output, follow the tool schemas exactly.' \
-              > /opt/gh-aw/prompts/markdown.md
-          fi
-      - name: Mirror gh-aw actions for Node on Windows
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          # Node on Windows resolves '/opt/gh-aw/actions/...' to '<current-drive>:\opt\gh-aw\actions\...'.
-          # Git-Bash resolves '/opt/gh-aw/actions' inside its MSYS root, so use cygpath to find
-          # the real Windows path of that directory, then copy it to drive-root \opt.
-
-          $bash = (Get-Command bash -ErrorAction Stop).Source
-          $optActionsWinPath = & $bash -lc 'set -euo pipefail; cygpath -w /opt/gh-aw/actions'
-          $optActionsWinPath = ($optActionsWinPath | Select-Object -First 1).Trim()
-          if ([string]::IsNullOrWhiteSpace($optActionsWinPath)) {
-            throw 'Unable to resolve Windows path for /opt/gh-aw/actions via cygpath'
-          }
-
-          $setupGlobals = Join-Path $optActionsWinPath 'setup_globals.cjs'
-          if (-not (Test-Path $setupGlobals)) {
-            throw "Expected gh-aw action scripts not found at $optActionsWinPath (missing setup_globals.cjs)"
-          }
-
-          foreach ($drive in @('C:', 'D:')) {
-            if (-not (Test-Path ($drive + '\\'))) { continue }
-            $dest = Join-Path $drive 'opt\gh-aw\actions'
-            New-Item -ItemType Directory -Force -Path $dest | Out-Null
-            Copy-Item -Path (Join-Path $optActionsWinPath '*') -Destination $dest -Recurse -Force
-            Write-Host "Copied installed gh-aw action scripts from $optActionsWinPath to $dest"
-          }
+        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.40.1
+        with:
+          destination: /opt/gh-aw/actions
       - name: Checkout repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
@@ -218,7 +152,6 @@ jobs:
         env:
           REPO_NAME: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
-        shell: bash
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
@@ -253,7 +186,6 @@ jobs:
       - name: Download container images
         run: bash /opt/gh-aw/actions/download_docker_images.sh ghcr.io/github/gh-aw-mcpg:v0.0.94 ghcr.io/github/github-mcp-server:v0.30.2 node:lts-alpine
       - name: Write Safe Outputs Config
-        shell: bash
         run: |
           mkdir -p /opt/gh-aw/safeoutputs
           mkdir -p /tmp/gh-aw/safeoutputs
@@ -434,7 +366,6 @@ jobs:
           EOF
       - name: Generate Safe Outputs MCP Server Config
         id: safe-outputs-config
-        shell: bash
         run: |
           # Generate a secure random API key (360 bits of entropy, 40+ chars)
           API_KEY=""
@@ -461,7 +392,6 @@ jobs:
           GH_AW_SAFE_OUTPUTS_TOOLS_PATH: /opt/gh-aw/safeoutputs/tools.json
           GH_AW_SAFE_OUTPUTS_CONFIG_PATH: /opt/gh-aw/safeoutputs/config.json
           GH_AW_MCP_LOG_DIR: /tmp/gh-aw/mcp-logs/safeoutputs
-        shell: bash
         run: |
           # Environment variables are set above to prevent template injection
           export DEBUG
@@ -481,7 +411,6 @@ jobs:
           GH_AW_SAFE_OUTPUTS_PORT: ${{ steps.safe-outputs-start.outputs.port }}
           GITHUB_MCP_LOCKDOWN: ${{ steps.determine-automatic-lockdown.outputs.lockdown == 'true' && '1' || '0' }}
           GITHUB_MCP_SERVER_TOKEN: ${{ secrets.GH_AW_GITHUB_MCP_SERVER_TOKEN || secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-        shell: bash
         run: |
           set -eo pipefail
           mkdir -p /tmp/gh-aw/mcp-config
@@ -1096,6 +1025,8 @@ jobs:
     if: needs.agent.outputs.output_types != '' || needs.agent.outputs.has_patch == 'true'
     runs-on: ubuntu-latest
     permissions: {}
+    concurrency:
+      group: "gh-aw-custom-${{ github.workflow }}"
     timeout-minutes: 10
     outputs:
       success: ${{ steps.parse_results.outputs.success }}
@@ -1335,29 +1266,6 @@ jobs:
           name: threat-detection.log
           path: /tmp/gh-aw/threat-detection/detection.log
           if-no-files-found: ignore
-
-  pre_activation:
-    if: (github.event_name != 'pull_request') || (github.event.pull_request.head.repo.id == github.repository_id)
-    runs-on: ubuntu-slim
-    outputs:
-      activated: ${{ steps.check_membership.outputs.is_team_member == 'true' }}
-    steps:
-      - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.40.1
-        with:
-          destination: /opt/gh-aw/actions
-      - name: Check team membership for workflow
-        id: check_membership
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
-        env:
-          GH_AW_REQUIRED_ROLES: admin,maintainer,write
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { setupGlobals } = require('/opt/gh-aw/actions/setup_globals.cjs');
-            setupGlobals(core, github, context, exec, io);
-            const { main } = require('/opt/gh-aw/actions/check_membership.cjs');
-            await main();
 
   safe_outputs:
     needs:

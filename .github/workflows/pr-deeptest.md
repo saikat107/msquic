@@ -1,8 +1,9 @@
 ---
-description: Analyze PR files and generate tests using DeepTest agent
+description: DeepTest end to end workflow
 on:
   pull_request:
     types: [opened, synchronize]
+    branches: [master]
 permissions:
   contents: read
   pull-requests: read
@@ -73,7 +74,7 @@ post-steps:
       if-no-files-found: ignore
 ---
 
-# Generate Tests for PR Files with DeepTest
+# DeepTest end to end workflow
 
 Analyze files changed in PR #${{ env.PR_NUMBER }} from repository `${{ env.PR_REPO }}` and generate comprehensive tests.
 

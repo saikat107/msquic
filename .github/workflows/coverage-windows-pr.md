@@ -1,8 +1,6 @@
 ---
 description: Run Windows PR tests with OpenCppCoverage and upload coverage artifacts
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:

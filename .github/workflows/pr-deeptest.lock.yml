@@ -19,16 +19,18 @@
 #   gh aw compile
 # For more information: https://github.com/github/gh-aw/blob/main/.github/aw/github-agentic-workflows.md
 #
-# Analyze PR files and generate tests using DeepTest agent
+# DeepTest end to end workflow
 #
-# frontmatter-hash: 7410f72dddf96c8ee76abb9ee155b171f91bd12cc18d8c34a7f8fdac1b5b887f
+# frontmatter-hash: fef1e5ab9ad911b5ac56c021c253997042f144da49bea3b3f289230c70327954
 
-name: "Generate Tests for PR Files with DeepTest"
+name: "DeepTest end to end workflow"
 "on":
   pull_request:
     types:
     - opened
     - synchronize
+    branches:
+    - master
 
 permissions: {}
 
@@ -36,7 +38,7 @@ concurrency:
   group: "gh-aw-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
-run-name: "Generate Tests for PR Files with DeepTest"
+run-name: "DeepTest end to end workflow"
 
 env:
   COVERAGE_RESULT_PATH: /tmp/gh-aw/coverage-result.md
@@ -446,7 +448,7 @@ jobs:
               version: "",
               agent_version: "0.0.400",
               cli_version: "v0.40.1",
-              workflow_name: "Generate Tests for PR Files with DeepTest",
+              workflow_name: "DeepTest end to end workflow",
               experimental: false,
               supports_tools_allowlist: true,
               supports_http_transport: true,
@@ -804,7 +806,7 @@ jobs:
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
           GH_AW_NOOP_MAX: 1
-          GH_AW_WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
+          GH_AW_WORKFLOW_NAME: "DeepTest end to end workflow"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -817,7 +819,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
+          GH_AW_WORKFLOW_NAME: "DeepTest end to end workflow"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -830,7 +832,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
+          GH_AW_WORKFLOW_NAME: "DeepTest end to end workflow"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_SECRET_VERIFICATION_RESULT: ${{ needs.agent.outputs.secret_verification_result }}
@@ -847,7 +849,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
+          GH_AW_WORKFLOW_NAME: "DeepTest end to end workflow"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -864,7 +866,7 @@ jobs:
           GH_AW_COMMENT_ID: ${{ needs.activation.outputs.comment_id }}
           GH_AW_COMMENT_REPO: ${{ needs.activation.outputs.comment_repo }}
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          GH_AW_WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
+          GH_AW_WORKFLOW_NAME: "DeepTest end to end workflow"
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.result }}
         with:
@@ -908,8 +910,8 @@ jobs:
       - name: Setup threat detection
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
-          WORKFLOW_DESCRIPTION: "Analyze PR files and generate tests using DeepTest agent"
+          WORKFLOW_NAME: "DeepTest end to end workflow"
+          WORKFLOW_DESCRIPTION: "DeepTest end to end workflow"
           HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
         with:
           script: |
@@ -1015,7 +1017,7 @@ jobs:
     env:
       GH_AW_ENGINE_ID: "copilot"
       GH_AW_WORKFLOW_ID: "pr-deeptest"
-      GH_AW_WORKFLOW_NAME: "Generate Tests for PR Files with DeepTest"
+      GH_AW_WORKFLOW_NAME: "DeepTest end to end workflow"
     outputs:
       create_discussion_error_count: ${{ steps.process_safe_outputs.outputs.create_discussion_error_count }}
       create_discussion_errors: ${{ steps.process_safe_outputs.outputs.create_discussion_errors }}

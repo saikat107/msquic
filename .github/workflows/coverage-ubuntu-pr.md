@@ -1,8 +1,6 @@
 ---
 description: Run Ubuntu PR tests with GCC/gcov coverage instrumentation and upload gcovr reports
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:

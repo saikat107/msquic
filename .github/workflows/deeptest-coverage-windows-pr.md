@@ -1,8 +1,6 @@
 ---
 description: Iteratively generate tests for PR-changed files until a coverage target is reached (Windows + OpenCppCoverage)
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       pr_number:
