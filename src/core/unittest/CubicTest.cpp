@@ -769,3 +769,101 @@ TEST(DeepTest_CubicTest, HyStart_StateTransitions)
                 Cubic->HyStartState <= HYSTART_DONE);
     ASSERT_GE(Cubic->CWndSlowStartGrowthDivisor, 1u);
 }
+
+//
+// Test: CubicCongestionControlIsInSlowStart when in slow start
+// Scenario: Verifies that CubicCongestionControlIsInSlowStart returns TRUE
+//           when CongestionWindow < SlowStartThreshold (in slow start phase).
+// How: Initialize CUBIC with default settings (SlowStartThreshold = UINT32_MAX),
+//      which puts it in slow start. Call CubicCongestionControlIsInSlowStart.
+// Assertions: Function returns TRUE since CongestionWindow < SlowStartThreshold.
+//
+TEST(DeepTest_CubicTest, IsInSlowStartWhenInSlowStart)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC *Cubic = &Connection.CongestionControl.Cubic;
+
+    // After initialization, should be in slow start
+    // CongestionWindow < SlowStartThreshold (UINT32_MAX)
+    ASSERT_LT(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+
+    // Test the new function
+    BOOLEAN result = CubicCongestionControlIsInSlowStart(&Connection.CongestionControl);
+
+    ASSERT_TRUE(result);
+}
+
+//
+// Test: CubicCongestionControlIsInSlowStart when not in slow start
+// Scenario: Verifies that CubicCongestionControlIsInSlowStart returns FALSE
+//           when CongestionWindow >= SlowStartThreshold (in congestion avoidance).
+// How: Initialize CUBIC, then artificially set SlowStartThreshold below CongestionWindow
+//      to simulate exiting slow start. Call CubicCongestionControlIsInSlowStart.
+// Assertions: Function returns FALSE since CongestionWindow >= SlowStartThreshold.
+//
+TEST(DeepTest_CubicTest, IsInSlowStartWhenNotInSlowStart)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC *Cubic = &Connection.CongestionControl.Cubic;
+
+    // Simulate exiting slow start by setting SlowStartThreshold <= CongestionWindow
+    uint32_t originalCWnd = Cubic->CongestionWindow;
+    Cubic->SlowStartThreshold = originalCWnd / 2;  // Set threshold below CWnd
+
+    ASSERT_GE(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+
+    // Test the new function
+    BOOLEAN result = CubicCongestionControlIsInSlowStart(&Connection.CongestionControl);
+
+    ASSERT_FALSE(result);
+}
+
+//
+// Test: CubicCongestionControlIsInSlowStart boundary condition (equal)
+// Scenario: Verifies behavior when CongestionWindow == SlowStartThreshold (boundary).
+// How: Set CongestionWindow exactly equal to SlowStartThreshold.
+//      Call CubicCongestionControlIsInSlowStart.
+// Assertions: Function returns FALSE since condition is strictly < (not <=).
+//
+TEST(DeepTest_CubicTest, IsInSlowStartBoundaryEqual)
+{
+    QUIC_CONNECTION Connection;
+    QUIC_SETTINGS_INTERNAL Settings{};
+
+    Settings.InitialWindowPackets = 10;
+    Settings.SendIdleTimeoutMs = 1000;
+
+    InitializeMockConnection(Connection, 1280);
+
+    CubicCongestionControlInitialize(&Connection.CongestionControl, &Settings);
+
+    QUIC_CONGESTION_CONTROL_CUBIC *Cubic = &Connection.CongestionControl.Cubic;
+
+    // Set CongestionWindow == SlowStartThreshold
+    Cubic->SlowStartThreshold = Cubic->CongestionWindow;
+
+    ASSERT_EQ(Cubic->CongestionWindow, Cubic->SlowStartThreshold);
+
+    // Test the new function - should return FALSE (not < means not in slow start)
+    BOOLEAN result = CubicCongestionControlIsInSlowStart(&Connection.CongestionControl);
+
+    ASSERT_FALSE(result);
+}
