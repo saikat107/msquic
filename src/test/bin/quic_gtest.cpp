@@ -675,6 +675,160 @@ TEST(Basic, ConnectionCloseFromCallback) {
     }
 }
 
+//
+// QUIC_RANGE Tests
+//
+
+TEST(Range, InitAndUninit) {
+    TestLogger Logger("QuicTestRangeInitAndUninit");
+    QuicTestRangeInitAndUninit();
+}
+
+TEST(Range, AddValuesAscending) {
+    TestLogger Logger("QuicTestRangeAddValuesAscending");
+    QuicTestRangeAddValuesAscending();
+}
+
+TEST(Range, AddValuesDescending) {
+    TestLogger Logger("QuicTestRangeAddValuesDescending");
+    QuicTestRangeAddValuesDescending();
+}
+
+TEST(Range, AddNonAdjacentValues) {
+    TestLogger Logger("QuicTestRangeAddNonAdjacentValues");
+    QuicTestRangeAddNonAdjacentValues();
+}
+
+TEST(Range, AddRangeContiguous) {
+    TestLogger Logger("QuicTestRangeAddRangeContiguous");
+    QuicTestRangeAddRangeContiguous();
+}
+
+TEST(Range, AddOverlappingRanges) {
+    TestLogger Logger("QuicTestRangeAddOverlappingRanges");
+    QuicTestRangeAddOverlappingRanges();
+}
+
+TEST(Range, AddAdjacentRanges) {
+    TestLogger Logger("QuicTestRangeAddAdjacentRanges");
+    QuicTestRangeAddAdjacentRanges();
+}
+
+TEST(Range, QueryNonExisting) {
+    TestLogger Logger("QuicTestRangeQueryNonExisting");
+    QuicTestRangeQueryNonExisting();
+}
+
+TEST(Range, Reset) {
+    TestLogger Logger("QuicTestRangeReset");
+    QuicTestRangeReset();
+}
+
+TEST(Range, RemoveMiddle) {
+    TestLogger Logger("QuicTestRangeRemoveMiddle");
+    QuicTestRangeRemoveMiddle();
+}
+
+TEST(Range, RemoveBeginning) {
+    TestLogger Logger("QuicTestRangeRemoveBeginning");
+    QuicTestRangeRemoveBeginning();
+}
+
+TEST(Range, RemoveEnd) {
+    TestLogger Logger("QuicTestRangeRemoveEnd");
+    QuicTestRangeRemoveEnd();
+}
+
+TEST(Range, RemoveEntire) {
+    TestLogger Logger("QuicTestRangeRemoveEntire");
+    QuicTestRangeRemoveEntire();
+}
+
+TEST(Range, RemoveNonExisting) {
+    TestLogger Logger("QuicTestRangeRemoveNonExisting");
+    QuicTestRangeRemoveNonExisting();
+}
+
+TEST(Range, SetMin) {
+    TestLogger Logger("QuicTestRangeSetMin");
+    QuicTestRangeSetMin();
+}
+
+TEST(Range, SetMinRemoveAll) {
+    TestLogger Logger("QuicTestRangeSetMinRemoveAll");
+    QuicTestRangeSetMinRemoveAll();
+}
+
+TEST(Range, GetMinMax) {
+    TestLogger Logger("QuicTestRangeGetMinMax");
+    QuicTestRangeGetMinMax();
+}
+
+TEST(Range, GetMinMaxEmpty) {
+    TestLogger Logger("QuicTestRangeGetMinMaxEmpty");
+    QuicTestRangeGetMinMaxEmpty();
+}
+
+TEST(Range, Growth) {
+    TestLogger Logger("QuicTestRangeGrowth");
+    QuicTestRangeGrowth();
+}
+
+TEST(Range, CompactNoOp) {
+    TestLogger Logger("QuicTestRangeCompactNoOp");
+    QuicTestRangeCompactNoOp();
+}
+
+TEST(Range, CompactMergeAdjacent) {
+    TestLogger Logger("QuicTestRangeCompactMergeAdjacent");
+    QuicTestRangeCompactMergeAdjacent();
+}
+
+TEST(Range, CompactMergeOverlapping) {
+    TestLogger Logger("QuicTestRangeCompactMergeOverlapping");
+    QuicTestRangeCompactMergeOverlapping();
+}
+
+TEST(Range, CompactWithShrink) {
+    TestLogger Logger("QuicTestRangeCompactWithShrink");
+    QuicTestRangeCompactWithShrink();
+}
+
+TEST(Range, ShrinkToInitial) {
+    TestLogger Logger("QuicTestRangeShrinkToInitial");
+    QuicTestRangeShrinkToInitial();
+}
+
+TEST(Range, ShrinkCustomSize) {
+    TestLogger Logger("QuicTestRangeShrinkCustomSize");
+    QuicTestRangeShrinkCustomSize();
+}
+
+TEST(Range, RemoveSubrangesShrink) {
+    TestLogger Logger("QuicTestRangeRemoveSubrangesShrink");
+    QuicTestRangeRemoveSubrangesShrink();
+}
+
+TEST(Range, LargeStressTest) {
+    TestLogger Logger("QuicTestRangeLargeStressTest");
+    QuicTestRangeLargeStressTest();
+}
+
+TEST(Range, BoundaryValues) {
+    TestLogger Logger("QuicTestRangeBoundaryValues");
+    QuicTestRangeBoundaryValues();
+}
+
+TEST(Range, AlternatingAddRemove) {
+    TestLogger Logger("QuicTestRangeAlternatingAddRemove");
+    QuicTestRangeAlternatingAddRemove();
+}
+
+TEST(Range, MaxAllocSizeLimit) {
+    TestLogger Logger("QuicTestRangeMaxAllocSizeLimit");
+    QuicTestRangeMaxAllocSizeLimit();
+}
+
 TEST_P(WithBool, RejectConnection) {
     TestLoggerT<ParamType> Logger("QuicTestConnectionRejection", GetParam());
     if (TestingKernelMode) {

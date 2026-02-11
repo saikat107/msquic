@@ -13,6 +13,7 @@ set(SOURCES
     OwnershipTest.cpp
     PathTest.cpp
     QuicDrill.cpp
+    RangeTest.cpp
     TestConnection.cpp
     TestListener.cpp
     TestStream.cpp
