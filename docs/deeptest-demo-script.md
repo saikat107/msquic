@@ -8,13 +8,9 @@ Video walkthrough script for demonstrating the DeepTest GitHub Agentic Workflow 
 
 > "Hey everyone — today I'm going to walk you through a GitHub Agentic Workflow we've built for the MsQuic project. It uses **DeepTest**, a custom agent that runs on top of the Copilot CLI. What makes DeepTest special is that it builds a **semantic index** of the entire codebase — it understands the structure, the call graphs, the dependencies — and uses that deep understanding to generate high-quality, idiomatic tests that actually exercise meaningful code paths. We've wired it into a GitHub Agentic Workflow so it triggers automatically on pull requests and iterates until it hits a 95% line coverage target."
 
-## Navigate to the Actions tab
+## Navigate to the Actions tab. Show the workflow in the Actions list, or trigger it from a PR
 
-> "The workflow itself is defined in a simple markdown file — that's the GitHub Agentic Workflows approach. You describe what you want in natural language with some YAML frontmatter, compile it, and it runs as a standard GitHub Actions workflow. But the real intelligence comes from DeepTest as the agent behind it."
-
-## Show the workflow in the Actions list, or trigger it from a PR
-
-> "It triggers automatically when a PR is opened or updated. Let me show you a run from a recent PR."
+> "It triggers automatically when a PR is opened or updated. But first, [let's check out what changes are in the PR](#appendix-code-changes-summary) — this one adds range compaction and shrinking functions to `range.c`. Now let me show you a run from this PR."
 
 ## Click into a workflow run
 
@@ -36,19 +32,39 @@ Video walkthrough script for demonstrating the DeepTest GitHub Agentic Workflow 
 
 ## Expand the step to show logs
 
-> "Let's look at what the agent did. It first reads the PR file list to see what changed — in this case, `range.c` and `range.h`. Then it reads the full source and extracts the PR diff to understand what's new. Next comes test harness discovery — the agent searches the repo for existing test files that cover the changed component. It uses `find` and `grep` to locate files referencing the changed symbols, explores the directory structure, and reads candidate test files to understand their patterns. For this run, it discovered `RangeTest.cpp` under `src/core/unittest/` — a GTest harness with a `SmartRange` RAII wrapper and 41 existing tests. Once it finds the right harness, it invokes the **component-test skill**, which kicks off a structured process: it builds a **Repository Contract Index** — a detailed document cataloging every public API's signature, preconditions, postconditions, and call relationships — then derives a scenario catalog and starts generating tests against the gaps."
+### Phase 1 — PR analysis and test harness discovery
+
+> "Let's look at what the agent did. It starts by reading the PR file list — `pr-files.json` — which tells it that `range.c` and `range.h` were modified. It reads both files in full to understand the component, then fetches the PR diff from the GitHub API to isolate exactly what changed: three new functions — `QuicRangeCompact`, `QuicRangeCalculateShrinkLength`, and `QuicRangeShrink`."
 >
-> "The agent then follows an iteration loop. In each iteration, it analyzes uncovered lines from the coverage report, generates new tests targeting those specific paths, and runs our `make-coverage.sh` script — which builds with coverage, executes the tests, and produces a Cobertura XML report."
+> "Next is **test harness discovery** — this is exploratory, not pre-indexed. The agent runs `find` and `grep` across the repo, looking for test files that reference `QuicRange` symbols. It checks `src/test/bin/`, reads `quic_gtest.cpp`, and eventually discovers `src/core/unittest/RangeTest.cpp` — a dedicated GTest file with a `SmartRange` RAII wrapper and 41 existing tests. It reads the full file to understand the test patterns, fixture style, and assertion conventions."
+
+### Phase 2 — Skill invocation and semantic indexing
+
+> "Once the agent understands both the production code and the test harness, it invokes the **unit-test skill** — one of DeepTest's built-in skills. The skill drives a structured process: first it calls into the **semantic-indexer skill**, which uses **tree-sitter** to parse the C source files and build an actual call graph stored in a SQLite database. For `QuicRangeCompact`, the indexer traces every function it calls — `QuicRangeGetSafe`, `QuicRangeGetHigh`, `QuicRangeRemoveSubranges`, `QuicRangeCalculateShrinkLength`, `QuicRangeShrink` — and recursively indexes their callees too. This gives the agent a programmatic understanding of the code's structure, not just a textual one."
+>
+> "The agent also creates a **path analysis** document — a detailed breakdown of every execution path through the focal function, identifying which scenarios a test would need to exercise to cover each branch."
+>
+> "For a deeper look at how the semantic indexer works and what the call graph looks like, see [`docs/semantic-indexer-example.md`](semantic-indexer-example.md)."
+
+### Phase 3 — Iterative test generation with coverage feedback
+
+> "Now the iteration loop begins. The agent writes a batch of tests, then runs `make-coverage.sh` — which builds with coverage instrumentation, executes the tests, and produces a Cobertura XML report. The agent parses the XML to find uncovered lines, reads the source at those line numbers to understand what path they represent, and writes targeted tests for the next iteration."
+>
+> "In this run, there were three iterations:"
+
+| Iteration | Tests added | Coverage | What happened |
+|---|---|---|---|
+| 1 | 13 tests | 81.12% | Initial batch covering the three new functions — Compact, Shrink, and related scenarios. One compile error (called an internal-only function `QuicRangeCalculateShrinkLength` directly), fixed and re-run. |
+| 2 | 12 tests | 93.57% | Targeted uncovered lines: `QuicRangeReset`, `GetRange`, `GetMinSafe`/`GetMaxSafe`, `SetMin` variations, growth branches, and edge cases in add/remove. |
+| 3 | 9 tests | 93.57% | Attempted to cover remaining gaps — allocation-failure paths and max-size limits. Coverage plateaued because these paths require fault-injection that the test infrastructure doesn't support. |
+
+> "The agent printed `MAX ITERATIONS REACHED. Best coverage: 93.57%.` — just short of the 95% target, with the remaining 6.4% being allocation-failure branches that need mock allocator support."
 
 ## Point to coverage numbers in the logs
 
-> "You can see the coverage results printed after each iteration. The agent starts at the baseline — say around 78% — and with each round, coverage climbs as it targets the remaining uncovered branches, error-handling paths, and edge cases."
+> "You can see the coverage climbing in the logs — 81% after iteration 1, then jumping to 93.5% after iteration 2 as the agent systematically targeted uncovered branches. The final 6.4% are all allocation-failure error paths — lines where `CXPLAT_ALLOC_NONPAGED` returns NULL — which are unreachable without a fault-injection harness."
 >
-> "Because DeepTest has that semantic understanding of the codebase, the tests it writes aren't just superficial — they follow the existing MsQuic test patterns, use the right helper classes like `TestConnection` and `TestStream`, and exercise paths that a naive approach would miss entirely."
-
-## Scroll past the agent execution to safe outputs / conclusion
-
-> "Once the agent finishes, it prepares a commit and requests a pull request through the **safe outputs** mechanism. The agent itself doesn't have write permissions — it emits a structured JSONL request, and a separate job with elevated permissions creates the draft PR. There's also a **threat detection** step in between that reviews the agent's output before any write operations happen."
+> "The tests the agent writes are idiomatic to the existing suite — they use the same `SmartRange` RAII wrapper, the same GTest assertion macros, and follow the same naming conventions as the original 41 tests. That's the value of reading the existing harness first and understanding the patterns."
 
 ## Navigate to the PR created by the workflow, if available
 
