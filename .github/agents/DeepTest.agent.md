@@ -31,7 +31,7 @@ You are generating tests for the {{component}} component. {{#if focal}} The test
 
 FOR iteration = 1, 2, 3 (max 3 iterations):
 
-  1. Augment the existing harness in {{harness}} with high-quality tests that improve coverage. If a focal function name is provided, you must invoke the **unit-test** skill with the appropriate inputs. Otherwise, you must invoke the **component-test** skill with the appropriate inputs.
+  1. Augment the existing harness in {{harness}} with high-quality tests that improve coverage. If a focal function name is provided, you must invoke the **unit-test** skill with the appropriate inputs. Otherwise, you must invoke the **component-test** skill with the appropriate inputs. But let's only use the **unit-test** skill for now to keep things simple, any new function or edited function will be the focal functions.
 
   2. Compute test coverage using `scripts/make-coverage.sh`
     - The 1st input to the script is a google gtest pattern to match tests in {{harness}}.
