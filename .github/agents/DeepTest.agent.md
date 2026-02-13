@@ -38,20 +38,20 @@ FOR iteration = 1, 2, 3, 4 (max 4 iterations):
     - The 2nd input to the script is the output path for the coverage report. You should use temporary paths in this form `/tmp/gh-aw/coverage-result-<iteration>.xml`.
     - You must **not** attempt to build or run the tests yourself. Rely on the script to do this and return the coverage results.
 
-  3. Stop iterating if test coverage is already above 95%.
+  3. Stop iterating if test coverage is already above 100%.
 
   4. Code change should happen within the folder `src/` only. If you notice any change outside of the folder, revert them with `git restore` and print warnings. 
 
-If you exhaust all iterations without reaching 95%, print "MAX ITERATIONS REACHED. Best coverage: <percent>%." and proceed to finalize.
+If you exhaust all iterations without reaching 100%, print "MAX ITERATIONS REACHED. Best coverage: <percent>%." and proceed to finalize.
 
 Save the coverage report from the final iteration to the path specified in `coverage_result`.
 
 ## Reminder
 
-If you are below 95%, you MUST generate more tests and iterate again. The number 95 is not a suggestion — it is a hard requirement.
+If you are below 100%, you MUST generate more tests and iterate again. The number 100 is not a suggestion — it is a hard requirement.
 
 What you must do is that let's only use the **unit-test** skill for now to keep things simple, any new function or edited function will be the focal functions. 
 
 What you must do is to find out the existing unit tests in the repo that cover the focal functions and use them as reference for writing new tests.
 
-What you mush do is at least 4 iterations if the coverage is below 95%. Do NOT stop before 4 iterations even if you think the coverage is not improving much. You must keep trying until you exhaust all 4 iterations.
+What you mush do is at least 4 iterations if the coverage is below 100%. Do NOT stop before 4 iterations even if you think the coverage is not improving much. You must keep trying until you exhaust all 4 iterations.
