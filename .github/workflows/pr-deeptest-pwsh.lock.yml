@@ -21,7 +21,7 @@
 #
 # Analyze PR files and generate tests using DeepTest agent
 #
-# frontmatter-hash: 6c0d359e9145203f5b7bb3a9d12dff83a2ab0a121f3f5a9142207e0aa525568a
+# frontmatter-hash: 13f9cc1614cbdd19b472a2f1397efc144b0aac7278a4b9a60d83d90fe7daff02
 
 name: "DeepTest agent workflow"
 "on":
@@ -57,7 +57,7 @@ jobs:
       comment_repo: ""
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@42e08424e94c418ca3612767a2135aa42312ca04 # v0.42.10
+        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.42.10
         with:
           destination: /opt/gh-aw/actions
       - name: Check workflow file timestamps
@@ -99,7 +99,7 @@ jobs:
       secret_verification_result: ${{ steps.validate-secret.outputs.verification_result }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@42e08424e94c418ca3612767a2135aa42312ca04 # v0.42.10
+        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.42.10
         with:
           destination: /opt/gh-aw/actions
       - name: Create gh-aw temp directory
@@ -584,7 +584,7 @@ jobs:
       - name: Execute GitHub Copilot CLI
         id: agentic_execution
         # Copilot CLI tool arguments (sorted):
-        timeout-minutes: 20
+        timeout-minutes: 40
         run: |
           set -o pipefail
           COPILOT_CLI_INSTRUCTION="$(cat /tmp/gh-aw/aw-prompts/prompt.txt)"
@@ -726,7 +726,7 @@ jobs:
       total_count: ${{ steps.missing_tool.outputs.total_count }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@42e08424e94c418ca3612767a2135aa42312ca04 # v0.42.10
+        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.42.10
         with:
           destination: /opt/gh-aw/actions
       - name: Debug job inputs
@@ -838,7 +838,7 @@ jobs:
       success: ${{ steps.parse_results.outputs.success }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@42e08424e94c418ca3612767a2135aa42312ca04 # v0.42.10
+        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.42.10
         with:
           destination: /opt/gh-aw/actions
       - name: Download agent artifacts
@@ -976,7 +976,7 @@ jobs:
       process_safe_outputs_temporary_id_map: ${{ steps.process_safe_outputs.outputs.temporary_id_map }}
     steps:
       - name: Setup Scripts
-        uses: github/gh-aw/actions/setup@42e08424e94c418ca3612767a2135aa42312ca04 # v0.42.10
+        uses: github/gh-aw/actions/setup@17c31ffe96b274cb4a6693638cabf61e45996ee7 # v0.42.10
         with:
           destination: /opt/gh-aw/actions
       - name: Download agent output artifact
