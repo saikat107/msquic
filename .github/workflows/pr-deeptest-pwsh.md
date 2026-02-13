@@ -21,6 +21,7 @@ env:
   GH_AW_DIR: /tmp/gh-aw
   PR_FILES_PATH: /tmp/gh-aw/pr-files.json
   COVERAGE_RESULT_PATH: /tmp/gh-aw/coverage-result.md
+timeout-minutes: 40
 engine:
   id: copilot
   agent: DeepTest
