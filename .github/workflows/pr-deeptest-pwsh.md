@@ -81,7 +81,7 @@ post-steps:
       if-no-files-found: ignore
 ---
 
-# DeepTest + pwsh
+# DeepTest agent workflow
 
 Analyze files changed in PR #${{ env.PR_NUMBER }} from repository `${{ env.PR_REPO }}` and generate comprehensive tests.
 

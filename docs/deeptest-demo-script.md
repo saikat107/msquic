@@ -28,7 +28,7 @@ Video walkthrough script for demonstrating the DeepTest GitHub Agentic Workflow 
 
 ## Scroll to the Copilot CLI execution step
 
-> "Here's the key step — 'Execute GitHub Copilot CLI.' This launches the Copilot CLI with DeepTest loaded as a **custom agent**. Unlike a generic LLM prompt, DeepTest brings its own specialized skills. It builds a **semantic index** over the repository — understanding not just the text of the code, but the relationships between components, functions, and test harnesses. That's what allows it to generate tests that are idiomatic to the existing test suite and that target the right harness files, the right patterns, and the right APIs."
+> "Here's the key step — 'Execute GitHub Copilot CLI.' This launches the Copilot CLI with DeepTest loaded as a **custom agent**. Unlike a generic LLM prompt, DeepTest brings its own specialized skills. It builds a **semantic index** over the repository — understanding not just the text of the code, but the relationships between components, functions, and test harnesses. The semantic index allows the agent to build context of program functionality and inferred contracts — like **pre- and post-conditions** — to test deeper paths in the system. The agent also does **neural path analysis** to identify what paths remain uncovered with respect to existing test collateral."
 
 ## Expand the step to show logs
 
@@ -42,7 +42,9 @@ Video walkthrough script for demonstrating the DeepTest GitHub Agentic Workflow 
 
 > "Once the agent understands both the production code and the test harness, it invokes the **unit-test skill** — one of DeepTest's built-in skills. The skill drives a structured process: first it calls into the **semantic-indexer skill**, which uses **tree-sitter** to parse the C source files and build an actual call graph stored in a SQLite database. For `QuicRangeCompact`, the indexer traces every function it calls — `QuicRangeGetSafe`, `QuicRangeGetHigh`, `QuicRangeRemoveSubranges`, `QuicRangeCalculateShrinkLength`, `QuicRangeShrink` — and recursively indexes their callees too. This gives the agent a programmatic understanding of the code's structure, not just a textual one."
 >
-> "The agent also creates a **path analysis** document — a detailed breakdown of every execution path through the focal function, identifying which scenarios a test would need to exercise to cover each branch."
+> "Once the index is built, the agent **queries** it to retrieve a specification for the focal function — a summary that includes what the function does, what its callees do, and the inferred **pre-conditions** (e.g., 'Range must be initialized,' 'UsedLength > 1 for merging to occur') and **post-conditions** (e.g., 'no overlapping subranges remain,' 'allocation may shrink if usage drops below threshold'). This specification is what the agent consults *before* writing any tests — it's not just reading the source as text, it's working from a structured contract derived from the call graph and bottom-up summarization."
+>
+> "The agent then performs **neural path analysis** — a detailed breakdown of every execution path through the focal function, cross-referenced against the existing test collateral. This identifies which paths remain uncovered: for example, 'the shrink-to-PreAllocSubRanges path in `QuicRangeShrink` is never exercised by the existing 41 tests.' Each uncovered path becomes a test generation target."
 >
 > "For a deeper look at how the semantic indexer works and what the call graph looks like, see [`docs/semantic-indexer-example.md`](semantic-indexer-example.md)."
 

@@ -23,7 +23,7 @@
 #
 # frontmatter-hash: 6c0d359e9145203f5b7bb3a9d12dff83a2ab0a121f3f5a9142207e0aa525568a
 
-name: "DeepTest + pwsh"
+name: "DeepTest agent workflow"
 "on":
   pull_request:
     types:
@@ -36,7 +36,7 @@ concurrency:
   group: "gh-aw-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
-run-name: "DeepTest + pwsh"
+run-name: "DeepTest agent workflow"
 
 env:
   COVERAGE_RESULT_PATH: /tmp/gh-aw/coverage-result.md
@@ -426,7 +426,7 @@ jobs:
               version: "",
               agent_version: "0.0.405",
               cli_version: "v0.42.10",
-              workflow_name: "DeepTest + pwsh",
+              workflow_name: "DeepTest agent workflow",
               experimental: false,
               supports_tools_allowlist: true,
               supports_http_transport: true,
@@ -757,7 +757,7 @@ jobs:
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
           GH_AW_NOOP_MAX: 1
-          GH_AW_WORKFLOW_NAME: "DeepTest + pwsh"
+          GH_AW_WORKFLOW_NAME: "DeepTest agent workflow"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -770,7 +770,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "DeepTest + pwsh"
+          GH_AW_WORKFLOW_NAME: "DeepTest agent workflow"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -783,7 +783,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "DeepTest + pwsh"
+          GH_AW_WORKFLOW_NAME: "DeepTest agent workflow"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_SECRET_VERIFICATION_RESULT: ${{ needs.agent.outputs.secret_verification_result }}
@@ -800,7 +800,7 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ env.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "DeepTest + pwsh"
+          GH_AW_WORKFLOW_NAME: "DeepTest agent workflow"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
@@ -817,7 +817,7 @@ jobs:
           GH_AW_COMMENT_ID: ${{ needs.activation.outputs.comment_id }}
           GH_AW_COMMENT_REPO: ${{ needs.activation.outputs.comment_repo }}
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          GH_AW_WORKFLOW_NAME: "DeepTest + pwsh"
+          GH_AW_WORKFLOW_NAME: "DeepTest agent workflow"
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.result }}
         with:
@@ -861,7 +861,7 @@ jobs:
       - name: Setup threat detection
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
-          WORKFLOW_NAME: "DeepTest + pwsh"
+          WORKFLOW_NAME: "DeepTest agent workflow"
           WORKFLOW_DESCRIPTION: "Analyze PR files and generate tests using DeepTest agent"
           HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
         with:
@@ -968,7 +968,7 @@ jobs:
     env:
       GH_AW_ENGINE_ID: "copilot"
       GH_AW_WORKFLOW_ID: "pr-deeptest-pwsh"
-      GH_AW_WORKFLOW_NAME: "DeepTest + pwsh"
+      GH_AW_WORKFLOW_NAME: "DeepTest agent workflow"
     outputs:
       create_discussion_error_count: ${{ steps.process_safe_outputs.outputs.create_discussion_error_count }}
       create_discussion_errors: ${{ steps.process_safe_outputs.outputs.create_discussion_errors }}
