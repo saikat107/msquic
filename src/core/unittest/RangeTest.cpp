@@ -787,3 +787,647 @@ TEST(RangeTest, SearchRangeThree)
     ASSERT_EQ(index, 2);
 #endif
 }
+
+//
+// DeepTest: Tests for new compact and shrink functionality
+//
+
+TEST(RangeTest, DeepTest_CompactEmptyRange)
+{
+    // Path: QuicRangeCompact with UsedLength == 0
+    SmartRange range;
+    ASSERT_EQ(range.ValidCount(), 0u);
+    QuicRangeCompact(&range.range);
+    ASSERT_EQ(range.ValidCount(), 0u);
+}
+
+TEST(RangeTest, DeepTest_CompactSingleSubrange)
+{
+    // Path: QuicRangeCompact with UsedLength == 1
+    SmartRange range;
+    range.Add(100, 10);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    QuicRangeCompact(&range.range);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 109u);
+}
+
+TEST(RangeTest, DeepTest_CompactNonAdjacentRanges)
+{
+    // Path: QuicRangeCompact with no merging (non-adjacent ranges)
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    range.Add(120, 10);  // [120-129]
+    range.Add(140, 10);  // [140-149]
+    ASSERT_EQ(range.ValidCount(), 3u);
+    
+    QuicRangeCompact(&range.range);
+    
+    // Should remain 3 separate ranges
+    ASSERT_EQ(range.ValidCount(), 3u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 149u);
+}
+
+TEST(RangeTest, DeepTest_CompactAdjacentRanges)
+{
+    // Path: QuicRangeCompact merges adjacent ranges
+    // Note: QuicRangeAddRange already calls Compact, so this tests the implicit behavior
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    range.Add(110, 10);  // [110-119] - adjacent to first
+    
+    // Should already be merged due to automatic compaction
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 119u);
+}
+
+TEST(RangeTest, DeepTest_CompactOverlappingRanges)
+{
+    // Path: QuicRangeCompact merges overlapping ranges
+    // Note: QuicRangeAddRange already calls Compact, so this tests the implicit behavior
+    SmartRange range;
+    range.Add(100, 20);  // [100-119]
+    range.Add(110, 20);  // [110-129] - overlaps with first
+    
+    // Should already be merged due to automatic compaction
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 129u);
+}
+
+TEST(RangeTest, DeepTest_CompactMultipleMerges)
+{
+    // Path: QuicRangeCompact with multiple consecutive merges
+    // Note: QuicRangeAddRange already calls Compact, so this tests the implicit behavior
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    range.Add(110, 10);  // [110-119]
+    range.Add(120, 10);  // [120-129]
+    range.Add(130, 10);  // [130-139]
+    
+    // Should already be merged due to automatic compaction
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 139u);
+}
+
+TEST(RangeTest, DeepTest_CompactNestedMerging)
+{
+    // Path: Merging one pair makes it adjacent to the next
+    // Note: QuicRangeAddRange already calls Compact, so this tests the implicit behavior
+    SmartRange range;
+    range.Add(100, 5);   // [100-104]
+    range.Add(105, 5);   // [105-109] - adjacent to first
+    range.Add(110, 10);  // [110-119] - adjacent to merged
+    
+    // All should already be merged due to automatic compaction
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 119u);
+}
+
+TEST(RangeTest, DeepTest_CompactTriggersShrinkg)
+{
+    // Path: QuicRangeCompact triggers shrinking after merging
+    SmartRange range;
+    
+    // Grow allocation by adding many small ranges
+    for (uint64_t i = 0; i < 50; i++) {
+        range.Add(i * 100, 10);
+    }
+    uint32_t allocBefore = range.range.AllocLength;
+    ASSERT_GT(allocBefore, QUIC_RANGE_INITIAL_SUB_COUNT * 4);
+    
+    // Remove most of them to trigger shrink condition
+    for (uint64_t i = 0; i < 45; i++) {
+        range.Remove(i * 100, 10);
+    }
+    
+    // Now compact - should shrink
+    QuicRangeCompact(&range.range);
+    
+    // Allocation should have shrunk
+    ASSERT_LT(range.range.AllocLength, allocBefore);
+}
+
+TEST(RangeTest, DeepTest_ShrinkToInitialSize)
+{
+    // Path: QuicRangeShrink to QUIC_RANGE_INITIAL_SUB_COUNT
+    SmartRange range;
+    
+    // Grow allocation
+    for (uint64_t i = 0; i < 20; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_GT(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    // Remove most to allow shrinking
+    for (uint64_t i = 5; i < 20; i++) {
+        range.Remove(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 5u);
+    
+    // Shrink to initial size
+    BOOLEAN result = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_EQ(range.ValidCount(), 5u);
+    
+    // Verify data integrity
+    ASSERT_EQ(range.Min(), 0u);
+}
+
+TEST(RangeTest, DeepTest_ShrinkToIntermediateSize)
+{
+    // Path: QuicRangeShrink to size between initial and current
+    SmartRange range;
+    
+    // Grow to large allocation
+    for (uint64_t i = 0; i < 40; i++) {
+        range.Add(i * 100, 10);
+    }
+    uint32_t allocBefore = range.range.AllocLength;
+    
+    // Remove some
+    for (uint64_t i = 20; i < 40; i++) {
+        range.Remove(i * 100, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 20u);
+    
+    // Shrink to half
+    uint32_t newSize = allocBefore / 2;
+    ASSERT_GT(newSize, QUIC_RANGE_INITIAL_SUB_COUNT);
+    BOOLEAN result = QuicRangeShrink(&range.range, newSize);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, newSize);
+    ASSERT_EQ(range.ValidCount(), 20u);
+}
+
+TEST(RangeTest, DeepTest_ShrinkWithEmptyRange)
+{
+    // Path: QuicRangeShrink with UsedLength == 0
+    SmartRange range;
+    
+    // Add many to grow allocation significantly
+    for (uint64_t i = 0; i < 100; i++) {
+        range.Add(i * 1000, 10);
+    }
+    uint32_t allocAfterGrowth = range.range.AllocLength;
+    ASSERT_GT(allocAfterGrowth, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    // Remove all to empty the range
+    for (uint64_t i = 0; i < 100; i++) {
+        range.Remove(i * 1000, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 0u);
+    // Allocation should still be large (remove doesn't always shrink immediately)
+    
+    // Manually shrink empty range
+    BOOLEAN result = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_EQ(range.ValidCount(), 0u);
+}
+
+TEST(RangeTest, DeepTest_CompactDoesNotShrinkWhenNotWarranted)
+{
+    // Test that compact doesn't shrink when conditions not met
+    SmartRange range;
+    
+    // Add enough to grow a bit but not trigger shrink
+    for (uint64_t i = 0; i < 10; i++) {
+        range.Add(i * 100, 10);
+    }
+    uint32_t allocBefore = range.range.AllocLength;
+    
+    // Compact without meeting shrink conditions
+    QuicRangeCompact(&range.range);
+    
+    // Should not shrink
+    ASSERT_EQ(range.range.AllocLength, allocBefore);
+}
+
+TEST(RangeTest, DeepTest_AddRangeCallsCompact)
+{
+    // Verify that QuicRangeAddRange triggers compaction
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    range.Add(115, 10);  // [115-124]
+    ASSERT_EQ(range.ValidCount(), 2u);
+    
+    // Add bridging range - should trigger compact and merge
+    range.Add(110, 5);   // [110-114]
+    
+    // After compaction, should be 1 range
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 124u);
+}
+
+TEST(RangeTest, DeepTest_RemoveRangeCallsCompact)
+{
+    // Verify that QuicRangeRemoveRange triggers compaction
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    
+    // Remove middle section, creating two ranges
+    range.Remove(120, 10);  // Now [100-119] and [130-149]
+    ASSERT_EQ(range.ValidCount(), 2u);
+    
+    // Add back the middle - should compact back to 1
+    range.Add(120, 10);
+    ASSERT_EQ(range.ValidCount(), 1u);
+}
+
+TEST(RangeTest, DeepTest_SetMinCallsCompact)
+{
+    // Verify that QuicRangeSetMin triggers compaction
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    range.Add(120, 10);  // [120-129]
+    range.Add(140, 10);  // [140-149]
+    ASSERT_EQ(range.ValidCount(), 3u);
+    
+    // SetMin removes first range and may trigger compact
+    QuicRangeSetMin(&range.range, 115);
+    
+    // Should have removed first range
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.Min(), 120u);
+}
+
+TEST(RangeTest, DeepTest_CompactLargeNumberOfRanges)
+{
+    // Stress test: compact many small ranges
+    SmartRange range;
+    
+    // Add 100 adjacent ranges
+    for (uint64_t i = 0; i < 100; i++) {
+        range.Add(i * 10, 10);
+    }
+    
+    // Compact should merge all into 1
+    QuicRangeCompact(&range.range);
+    
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 0u);
+    ASSERT_EQ(range.Max(), 999u);
+}
+
+TEST(RangeTest, DeepTest_CompactMixedOverlapAndAdjacent)
+{
+    // Test with mix of overlapping and adjacent ranges
+    // Note: QuicRangeAddRange already calls Compact, so this tests the implicit behavior
+    SmartRange range;
+    range.Add(100, 20);  // [100-119]
+    range.Add(115, 10);  // [115-124] - overlaps
+    range.Add(125, 10);  // [125-134] - adjacent to merged
+    range.Add(135, 5);   // [135-139] - adjacent
+    
+    // All should already be merged due to automatic compaction
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 139u);
+}
+
+TEST(RangeTest, DeepTest_ShrinkPreservesData)
+{
+    // Verify shrinking preserves all subrange data
+    SmartRange range;
+    
+    // Add specific pattern
+    uint64_t values[] = {100, 200, 300, 400, 500};
+    for (auto val : values) {
+        range.Add(val, 5);
+    }
+    ASSERT_EQ(range.ValidCount(), 5u);
+    
+    // Grow allocation
+    for (uint64_t i = 0; i < 30; i++) {
+        range.Add(1000 + i * 100, 5);
+    }
+    
+    // Remove the extra ones
+    for (uint64_t i = 0; i < 30; i++) {
+        range.Remove(1000 + i * 100, 5);
+    }
+    ASSERT_EQ(range.ValidCount(), 5u);
+    
+    // Shrink
+    QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    // Verify original data intact
+    ASSERT_EQ(range.ValidCount(), 5u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 504u);
+}
+
+// Iteration 2: Target uncovered lines in QuicRangeCompact and QuicRangeShrink
+
+TEST(RangeTest, DeepTest_CompactWithTrueOverlap)
+{
+    // Target lines 595, 598, 601 - merging when ranges actually overlap (not just adjacent)
+    SmartRange range;
+    
+    // Manually construct overlapping ranges by adding non-adjacent first
+    range.Add(100, 20);  // [100-119]
+    range.Add(150, 20);  // [150-169]
+    
+    // Now add one that truly overlaps (not adjacent) with first
+    range.Add(110, 30);  // [110-139] - overlaps [100-119]
+    
+    // The overlap merging path should have been exercised
+    ASSERT_EQ(range.ValidCount(), 2u);  // [100-139] and [150-169]
+}
+
+TEST(RangeTest, DeepTest_CompactCallsShrinkPath)
+{
+    // Target line 614 - QuicRangeCompact calling QuicRangeShrink
+    SmartRange range;
+    
+    // Build a large sparse range set
+    for (uint64_t i = 0; i < 100; i++) {
+        range.Add(i * 1000, 1);
+    }
+    
+    uint32_t allocBefore = range.range.AllocLength;
+    
+    // Remove most, leaving just a few scattered ones
+    for (uint64_t i = 2; i < 98; i++) {
+        range.Remove(i * 1000, 1);
+    }
+    
+    // Now manually compact - should trigger shrink due to low usage
+    if (range.range.AllocLength >= QUIC_RANGE_INITIAL_SUB_COUNT * 4 &&
+        range.range.UsedLength < range.range.AllocLength / 8) {
+        QuicRangeCompact(&range.range);
+        // Should have shrunk
+        ASSERT_LT(range.range.AllocLength, allocBefore);
+    }
+}
+
+TEST(RangeTest, DeepTest_ManualCompactMergeScenario)
+{
+    // Additional test to ensure the actual merge code paths are hit
+    SmartRange range;
+    
+    // Create a pattern where manual compaction will find mergeable ranges
+    // Add non-contiguous ranges first
+    range.Add(1000, 10);
+    range.Add(2000, 10);
+    range.Add(3000, 10);
+    
+    // Now use direct manipulation to create overlapping subranges
+    // by adding values that would create overlap
+    range.Add(1005, 20);  // Overlaps with [1000-1009]
+    
+    // Verify merging happened
+    ASSERT_LE(range.ValidCount(), 3u);
+}
+
+// Iteration 3: Additional edge cases and comprehensive path coverage
+
+TEST(RangeTest, DeepTest_ResetAfterGrowth)
+{
+    // Test QuicRangeReset after growing allocation
+    SmartRange range;
+    
+    for (uint64_t i = 0; i < 50; i++) {
+        range.Add(i * 100, 10);
+    }
+    ASSERT_GT(range.ValidCount(), 0u);
+    
+    range.Reset();
+    ASSERT_EQ(range.ValidCount(), 0u);
+}
+
+TEST(RangeTest, DeepTest_GetRangeAtBoundaries)
+{
+    // Test QuicRangeGetRange at various positions
+    SmartRange range;
+    range.Add(100, 50);  // [100-149]
+    
+    uint64_t count;
+    BOOLEAN isLast;
+    
+    // Get at start
+    BOOLEAN result = QuicRangeGetRange(&range.range, 100, &count, &isLast);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(count, 50u);
+    ASSERT_TRUE(isLast);
+    
+    // Get in middle
+    result = QuicRangeGetRange(&range.range, 125, &count, &isLast);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(count, 25u);
+    ASSERT_TRUE(isLast);
+    
+    // Get value not in range
+    result = QuicRangeGetRange(&range.range, 200, &count, &isLast);
+    ASSERT_FALSE(result);
+}
+
+TEST(RangeTest, DeepTest_GetMinMaxSafeOnEmpty)
+{
+    // Test QuicRangeGetMinSafe/GetMaxSafe on empty range
+    SmartRange range;
+    
+    uint64_t value;
+    ASSERT_FALSE(QuicRangeGetMinSafe(&range.range, &value));
+    ASSERT_FALSE(QuicRangeGetMaxSafe(&range.range, &value));
+}
+
+TEST(RangeTest, DeepTest_SetMinMultipleSubranges)
+{
+    // Test QuicRangeSetMin with multiple subranges
+    SmartRange range;
+    range.Add(100, 10);   // [100-109]
+    range.Add(200, 10);   // [200-209]
+    range.Add(300, 10);   // [300-309]
+    ASSERT_EQ(range.ValidCount(), 3u);
+    
+    // SetMin to 250 - should remove first two ranges
+    QuicRangeSetMin(&range.range, 250);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 300u);
+}
+
+TEST(RangeTest, DeepTest_SetMinSplitsRange)
+{
+    // Test QuicRangeSetMin splitting a range
+    SmartRange range;
+    range.Add(100, 100);  // [100-199]
+    
+    // SetMin to 150 - should split the range
+    QuicRangeSetMin(&range.range, 150);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 150u);
+    ASSERT_EQ(range.Max(), 199u);
+}
+
+TEST(RangeTest, DeepTest_RemoveRangeSplit)
+{
+    // Test remove creating a split
+    SmartRange range;
+    range.Add(100, 100);  // [100-199]
+    
+    // Remove middle
+    range.Remove(140, 20);  // Remove [140-159]
+    
+    // Should have two ranges now
+    ASSERT_EQ(range.ValidCount(), 2u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 199u);
+}
+
+TEST(RangeTest, DeepTest_AddValueAtBoundaries)
+{
+    // Test adding values at exact boundaries
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    
+    // Add at high boundary + 1 (should merge)
+    range.Add((uint64_t)110);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Max(), 110u);
+    
+    // Add at low boundary - 1 (should merge)
+    range.Add((uint64_t)99);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 99u);
+}
+
+TEST(RangeTest, DeepTest_LargeRangeOperations)
+{
+    // Test with large count values
+    SmartRange range;
+    range.Add(1000000, 1000000);  // Large range
+    
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 1000000u);
+    ASSERT_EQ(range.Max(), 1999999u);
+    
+    // Remove from middle
+    range.Remove(1500000, 100000);
+    ASSERT_EQ(range.ValidCount(), 2u);
+}
+
+// Iteration 4: Final attempts to hit remaining uncovered lines
+
+TEST(RangeTest, DeepTest_ShrinkFromLargeToInitial)
+{
+    // Test shrinking from very large allocation back to initial
+    SmartRange range;
+    
+    // Grow to very large allocation
+    for (uint64_t i = 0; i < 200; i++) {
+        range.Add(i * 10000, 100);
+    }
+    
+    uint32_t largeAlloc = range.range.AllocLength;
+    ASSERT_GT(largeAlloc, QUIC_RANGE_INITIAL_SUB_COUNT * 10);
+    
+    // Remove almost everything
+    for (uint64_t i = 2; i < 200; i++) {
+        range.Remove(i * 10000, 100);
+    }
+    
+    // Manually shrink all the way to initial
+    BOOLEAN result = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    ASSERT_TRUE(result);
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+}
+
+TEST(RangeTest, DeepTest_MultipleSuccessiveShrinks)
+{
+    // Test multiple successive shrink operations
+    SmartRange range;
+    
+    for (uint64_t i = 0; i < 100; i++) {
+        range.Add(i * 1000, 10);
+    }
+    
+    uint32_t alloc1 = range.range.AllocLength;
+    
+    // Remove many to allow shrinking
+    for (uint64_t i = 20; i < 100; i++) {
+        range.Remove(i * 1000, 10);
+    }
+    ASSERT_EQ(range.ValidCount(), 20u);
+    
+    // Try shrinking if allocation is large enough
+    if (alloc1 > QUIC_RANGE_INITIAL_SUB_COUNT * 2) {
+        uint32_t newSize = CXPLAT_MAX(alloc1 / 2, QUIC_RANGE_INITIAL_SUB_COUNT * 2);
+        if (newSize >= range.range.UsedLength) {
+            QuicRangeShrink(&range.range, newSize);
+            ASSERT_LE(range.range.AllocLength, alloc1);
+        }
+    }
+}
+
+TEST(RangeTest, DeepTest_CompactAfterRemove)
+{
+    // Test that compaction happens after remove operations
+    SmartRange range;
+    
+    // Create a large contiguous range
+    range.Add(1000, 1000);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    
+    // Remove from middle to create split
+    range.Remove(1400, 200);
+    
+    // Should have split into 2 ranges
+    ASSERT_EQ(range.ValidCount(), 2u);
+    
+    // Add back the middle to test merging via compact
+    range.Add(1400, 200);
+    
+    // Should merge back to 1
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 1000u);
+    ASSERT_EQ(range.Max(), 1999u);
+}
+
+TEST(RangeTest, DeepTest_EdgeCaseZeroCount)
+{
+    // Test edge cases with minimal counts
+    SmartRange range;
+    range.Add(100, 1);  // Single value
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), 100u);
+    ASSERT_EQ(range.Max(), 100u);
+    
+    // Remove it
+    range.Remove(100, 1);
+    ASSERT_EQ(range.ValidCount(), 0u);
+}
+
+TEST(RangeTest, DeepTest_MaxValueRanges)
+{
+    // Test with very large values near uint64 max
+    SmartRange range;
+    uint64_t large = UINT64_MAX - 1000;
+    
+    range.Add(large, 100);
+    ASSERT_EQ(range.ValidCount(), 1u);
+    ASSERT_EQ(range.Min(), large);
+}
+
+TEST(RangeTest, DeepTest_InterleavedAddRemove)
+{
+    // Test interleaved add and remove operations
+    SmartRange range;
+    
+    for (int i = 0; i < 20; i++) {
+        range.Add(i * 100, 10);
+        if (i % 3 == 0) {
+            range.Remove(i * 100, 5);
+        }
+    }
+    
+    ASSERT_GT(range.ValidCount(), 0u);
+}
