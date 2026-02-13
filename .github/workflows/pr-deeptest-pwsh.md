@@ -109,8 +109,13 @@ You must never attempt to run `git push` as it is not supported in this environm
 
 3. Store the coverage report at `${{ env.COVERAGE_RESULT_PATH }}`.
 
-4. Prepare commit with `scripts/create-commit-for-safe-outputs.sh` and use `create_pull_request` with:
-    - Title: "Tests for PR #${{ env.PR_NUMBER }}"
-    - Body: workflow run ${{ github.run_id }}
+4. Prepare commit and create PR:
+   a. Verify you have staged changes: run `git status --short` and print the output.
+   b. Run `scripts/create-commit-for-safe-outputs.sh` to commit the changes.
+   c. Print the commit summary: run `git log --oneline -1` and `git diff-tree --no-commit-id --name-only -r HEAD` to log the commit hash and changed files.
+   d. Call the `create_pull_request` safe output tool with:
+      - Title: "Tests for PR #${{ env.PR_NUMBER }}"
+      - Body: Include the coverage percentage, number of tests added, and workflow run ${{ github.run_id }}
+   e. Print the result of the `create_pull_request` tool call to confirm the PR was requested.
 
 5. If no staged changes, use `noop` with message "No test changes generated for PR #${{ env.PR_NUMBER }}."
