@@ -590,12 +590,12 @@ QuicRangeCompact(
         uint64_t NextLow = NextRange->Low;
         uint64_t NextHigh = QuicRangeGetHigh(NextRange);
 
-        if (NextLow <= CurrentHigh) {
+        if (NextLow <= CurrentHigh + 1) {
             // Ranges overlap or are adjacent (NextLow == CurrentHigh + 1) - merge them
             uint64_t MergedHigh = CXPLAT_MAX(CurrentHigh, NextHigh);
 
             // Update current range to cover both
-            CurrentRange->Count = MergedHigh - CurrentRange->Low;
+            CurrentRange->Count = MergedHigh - CurrentRange->Low + 1;
 
             // Remove the next range since it's now merged
             QuicRangeRemoveSubranges(Range, CurrentIndex + 1, 1);
