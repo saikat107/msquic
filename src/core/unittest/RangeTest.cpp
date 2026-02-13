@@ -787,3 +787,304 @@ TEST(RangeTest, SearchRangeThree)
     ASSERT_EQ(index, 2);
 #endif
 }
+
+TEST(RangeTest, Compact)
+{
+    SmartRange range;
+    
+    // Add overlapping ranges
+    range.Add(10, 5);  // 10-14
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    range.Add(13, 5);  // 13-17 (overlaps with previous)
+    // After automatic compaction during add, should still be 1 range
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    // Verify the merged range covers everything
+    ASSERT_EQ(range.Min(), 10ul);
+    ASSERT_EQ(range.Max(), 17ul);
+    
+    // Add adjacent range
+    range.Add(18, 3);  // 18-20 (adjacent to 17)
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    // Verify compaction works
+    ASSERT_EQ(range.Max(), 20ul);
+}
+
+TEST(RangeTest, CompactMultiple)
+{
+    SmartRange range;
+    
+    // Add multiple overlapping and adjacent ranges
+    range.Add(10, 3);  // 10-12
+    range.Add(20, 3);  // 20-22
+    range.Add(30, 3);  // 30-32
+    
+    ASSERT_EQ(range.ValidCount(), 3ul);
+    
+    // Add range that bridges first two
+    range.Add(13, 7);  // 13-19
+    // Should compact to 2 ranges now: [10-22] and [30-32]
+    ASSERT_EQ(range.ValidCount(), 2ul);
+    
+    // Add range that bridges all
+    range.Add(23, 7);  // 23-29
+    // Should compact to 1 range: [10-32]
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    ASSERT_EQ(range.Min(), 10ul);
+    ASSERT_EQ(range.Max(), 32ul);
+}
+
+TEST(RangeTest, Shrink)
+{
+    SmartRange range;
+    
+    // Add enough ranges to trigger growth beyond initial allocation
+    for (uint64_t i = 0; i < 20; i++) {
+        range.Add(i * 10, 1);
+    }
+    
+    uint32_t allocLengthAfterGrowth = range.range.AllocLength;
+    ASSERT_GT(allocLengthAfterGrowth, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    // Remove most ranges to trigger shrinking
+    for (uint64_t i = 0; i < 16; i++) {
+        range.Remove(i * 10, 1);
+    }
+    
+    // Should have shrunk the allocation
+    ASSERT_LT(range.range.AllocLength, allocLengthAfterGrowth);
+    ASSERT_EQ(range.ValidCount(), 4ul);
+}
+
+TEST(RangeTest, ShrinkToInitial)
+{
+    SmartRange range;
+    
+    // Grow the range
+    for (uint64_t i = 0; i < 16; i++) {
+        range.Add(i * 10, 1);
+    }
+    
+    uint32_t allocLength = range.range.AllocLength;
+    ASSERT_GT(allocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    
+    // Remove all but a few ranges
+    for (uint64_t i = 0; i < 14; i++) {
+        range.Remove(i * 10, 1);
+    }
+    
+    // Should shrink back to initial size or close to it
+    ASSERT_LE(range.range.AllocLength, allocLength);
+    ASSERT_EQ(range.ValidCount(), 2ul);
+}
+
+TEST(RangeTest, CompactAfterRemoval)
+{
+    SmartRange range;
+    
+    // Add a continuous range
+    range.Add(10, 30);  // 10-39
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    // Remove middle part
+    range.Remove(20, 10);  // Remove 20-29
+    ASSERT_EQ(range.ValidCount(), 2ul);  // Now [10-19] and [30-39]
+    
+    // Add back the middle part
+    range.Add(20, 10);  // 20-29
+    // Should compact back to 1 range
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    ASSERT_EQ(range.Min(), 10ul);
+    ASSERT_EQ(range.Max(), 39ul);
+}
+
+TEST(RangeTest, ShrinkWithCompact)
+{
+    SmartRange range;
+    
+    // Add many separate ranges
+    for (uint64_t i = 0; i < 24; i++) {
+        range.Add(i * 10, 1);
+    }
+    
+    uint32_t maxAllocLength = range.range.AllocLength;
+    
+    // Remove ranges to leave gaps
+    for (uint64_t i = 0; i < 20; i++) {
+        range.Remove(i * 10, 1);
+    }
+    
+    // Should have shrunk
+    ASSERT_LT(range.range.AllocLength, maxAllocLength);
+    ASSERT_EQ(range.ValidCount(), 4ul);
+    
+    // Verify remaining ranges are correct
+    ASSERT_EQ(range.Min(), 200ul);
+    ASSERT_EQ(range.Max(), 230ul);
+}
+
+TEST(RangeTest, CompactEdgeCases)
+{
+    SmartRange range;
+    
+    // Test with single element - compact should be no-op
+    range.Add(10);
+    QuicRangeCompact(&range.range);
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    
+    // Test with empty range - compact should be no-op
+    range.Reset();
+    QuicRangeCompact(&range.range);
+    ASSERT_EQ(range.ValidCount(), 0ul);
+}
+
+TEST(RangeTest, GetRange)
+{
+    SmartRange range;
+    uint64_t count;
+    BOOLEAN isLastRange;
+    
+    // Add some ranges
+    range.Add(10, 5);  // 10-14
+    range.Add(20, 5);  // 20-24
+    
+    // Test getting first range
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 10, &count, &isLastRange));
+    ASSERT_EQ(count, 5ul);
+    ASSERT_FALSE(isLastRange);
+    
+    // Test getting last range
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 20, &count, &isLastRange));
+    ASSERT_EQ(count, 5ul);
+    ASSERT_TRUE(isLastRange);
+    
+    // Test middle of a range
+    ASSERT_TRUE(QuicRangeGetRange(&range.range, 12, &count, &isLastRange));
+    ASSERT_EQ(count, 3ul);  // 12-14 (3 values left)
+    ASSERT_FALSE(isLastRange);
+    
+    // Test value not in range
+    ASSERT_FALSE(QuicRangeGetRange(&range.range, 15, &count, &isLastRange));
+    ASSERT_FALSE(QuicRangeGetRange(&range.range, 100, &count, &isLastRange));
+}
+
+TEST(RangeTest, SetMin)
+{
+    SmartRange range;
+    
+    // Add some ranges
+    range.Add(5, 5);    // 5-9
+    range.Add(15, 5);   // 15-19
+    range.Add(25, 5);   // 25-29
+    
+    ASSERT_EQ(range.ValidCount(), 3ul);
+    ASSERT_EQ(range.Min(), 5ul);
+    
+    // Set min to middle of first range
+    QuicRangeSetMin(&range.range, 7);
+    ASSERT_EQ(range.Min(), 7ul);
+    ASSERT_EQ(range.ValidCount(), 3ul);
+    
+    // Set min to remove first range completely
+    QuicRangeSetMin(&range.range, 15);
+    ASSERT_EQ(range.Min(), 15ul);
+    ASSERT_EQ(range.ValidCount(), 2ul);
+    
+    // Set min to middle of remaining ranges
+    QuicRangeSetMin(&range.range, 27);
+    ASSERT_EQ(range.Min(), 27ul);
+    ASSERT_EQ(range.ValidCount(), 1ul);
+}
+
+TEST(RangeTest, SetMinEmptyRange)
+{
+    SmartRange range;
+    
+    // Test SetMin on empty range
+    QuicRangeSetMin(&range.range, 100);
+    ASSERT_EQ(range.ValidCount(), 0ul);
+}
+
+TEST(RangeTest, SetMinNoChange)
+{
+    SmartRange range;
+    range.Add(10, 5);
+    
+    // Set min to value already less than min
+    QuicRangeSetMin(&range.range, 5);
+    ASSERT_EQ(range.Min(), 10ul);
+    ASSERT_EQ(range.ValidCount(), 1ul);
+}
+
+TEST(RangeTest, GrowToMaxSize)
+{
+    SmartRange range;
+    
+    // Add many separate ranges to trigger multiple growth cycles
+    for (uint64_t i = 0; i < QUIC_RANGE_INITIAL_SUB_COUNT * 4; i++) {
+        ASSERT_TRUE(range.TryAdd(i * 100, 1));
+    }
+    
+    ASSERT_GT(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+}
+
+TEST(RangeTest, MakeSpaceAllPaths)
+{
+    SmartRange range;
+    
+    // Test inserting at beginning
+    range.Add(100);
+    range.Add(50);  // Insert before
+    ASSERT_EQ(range.Min(), 50ul);
+    
+    // Test inserting at end
+    range.Add(200);  // Insert after
+    ASSERT_EQ(range.Max(), 200ul);
+    
+    // Test inserting in middle
+    range.Add(150);  // Insert between
+    ASSERT_EQ(range.ValidCount(), 4ul);
+}
+
+TEST(RangeTest, CompactWithOverlap)
+{
+    SmartRange range;
+    
+    // Add ranges that will trigger the overlap compaction logic
+    range.Add(10, 10);  // 10-19
+    range.Add(15, 10);  // 15-24 (overlaps)
+    
+    // Should be compacted to one range
+    ASSERT_EQ(range.ValidCount(), 1ul);
+    ASSERT_EQ(range.Min(), 10ul);
+    ASSERT_EQ(range.Max(), 24ul);
+}
+
+TEST(RangeTest, ShrinkFailure)
+{
+    SmartRange range;
+    
+    // Add ranges
+    for (uint64_t i = 0; i < 32; i++) {
+        range.Add(i * 10, 1);
+    }
+    
+    uint32_t allocLength = range.range.AllocLength;
+    
+    // Remove most ranges
+    for (uint64_t i = 0; i < 28; i++) {
+        range.Remove(i * 10, 1);
+    }
+    
+    // Should have attempted to shrink
+    ASSERT_LE(range.range.AllocLength, allocLength);
+    
+    // Test that we can still use the range after shrinking
+    range.Add(5000);
+    ASSERT_EQ(range.Max(), 5000ul);
+}
+
