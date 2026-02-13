@@ -171,7 +171,7 @@ jobs:
           cat > /opt/gh-aw/safeoutputs/tools.json << 'EOF'
           [
             {
-              "description": "Create a new GitHub pull request to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. Title will be prefixed with \"[Deep Test]\". Labels [deeptest] will be automatically added. PRs will be created as drafts.",
+              "description": "Create a new GitHub pull request on a seperate branch to propose code changes. Use this after making file edits to submit them for review and merging. The PR will be created from the current branch with your committed changes. For code review comments on an existing PR, use create_pull_request_review_comment instead. CONSTRAINTS: Maximum 1 pull request(s) can be created. Title will be prefixed with \"[Deep Test]\". Labels [deeptest] will be automatically added. PRs will be created as drafts. Please print PR information in the following JSON format: {\"url\": \"<pr_url>\", \"number\": <pr_number>}. Always use this format for the output so it can be parsed by the workflow. If the PR cannot be created, provide a clear explanation in a missing_tool or missing_data output.",
               "inputSchema": {
                 "additionalProperties": false,
                 "properties": {
