@@ -49,3 +49,7 @@ Save the coverage report from the final iteration to the path specified in `cove
 ## Reminder
 
 If you are below 95%, you MUST generate more tests and iterate again. The number 95 is not a suggestion — it is a hard requirement.
+
+What you must do is that let's only use the **unit-test** skill for now to keep things simple, any new function or edited function will be the focal functions. Please find out the existing tests that cover the focal functions and use them as reference for writing new tests.
+
+What you mush do is at least 4 iterations if the coverage is below 95%. Do NOT stop before 4 iterations even if you think the coverage is not improving much. You must keep trying until you exhaust all 4 iterations.
