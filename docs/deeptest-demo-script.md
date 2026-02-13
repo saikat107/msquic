@@ -48,7 +48,7 @@ Video walkthrough script for demonstrating the DeepTest GitHub Agentic Workflow 
 >
 > "For a deeper look at how the semantic indexer works and what the call graph looks like, see [`docs/semantic-indexer-example.md`](semantic-indexer-example.md)."
 
-### Phase 3 — Iterative test generation with coverage feedback
+### Phase 3 — Iterative test generation with coverage feedback, the actualy numbers vary with workflow runs
 
 > "Now the iteration loop begins. The agent writes a batch of tests, then runs `make-coverage.sh` — which builds with coverage instrumentation, executes the tests, and produces a Cobertura XML report. The agent parses the XML to find uncovered lines, reads the source at those line numbers to understand what path they represent, and writes targeted tests for the next iteration."
 >
