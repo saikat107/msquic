@@ -787,3 +787,52 @@ TEST(RangeTest, SearchRangeThree)
     ASSERT_EQ(index, 2);
 #endif
 }
+
+//
+// DeepTest: Comprehensive tests for QuicRangeCompact and QuicRangeShrink
+// Added to cover new functions in PR #49
+//
+
+TEST(DeepTest_RangeCompact, EmptyRange) {
+    SmartRange range;
+    QuicRangeCompact(&range.range);
+    EXPECT_EQ(range.range.UsedLength, 0u);
+}
+
+TEST(DeepTest_RangeCompact, SingleSubrange) {
+    SmartRange range;
+    range.Add(100);
+    ASSERT_EQ(range.range.UsedLength, 1u);
+    QuicRangeCompact(&range.range);
+    EXPECT_EQ(range.range.UsedLength, 1u);
+    EXPECT_EQ(QuicRangeGet(&range.range, 0)->Low, 100u);
+}
+
+TEST(DeepTest_RangeCompact, TwoNonOverlappingRanges) {
+    SmartRange range;
+    range.Add(100, 10);  // [100-109]
+    range.Add(120, 10);  // [120-129]
+    ASSERT_EQ(range.range.UsedLength, 2u);
+    QuicRangeCompact(&range.range);
+    EXPECT_EQ(range.range.UsedLength, 2u);  // Should remain separate
+    EXPECT_EQ(QuicRangeGet(&range.range, 0)->Low, 100u);
+    EXPECT_EQ(QuicRangeGet(&range.range, 1)->Low, 120u);
+}
+
+TEST(DeepTest_RangeCompact, OverlappingRangesAlreadyMerged) {
+    // Adding overlapping ranges via Add() will automatically merge them
+    // This tests that Compact works correctly on already-merged ranges
+    SmartRange range;
+    range.Add(100, 30);  // [100-129]
+    ASSERT_EQ(range.range.UsedLength, 1u);
+    QuicRangeCompact(&range.range);
+    EXPECT_EQ(range.range.UsedLength, 1u);
+}
+
+TEST(DeepTest_RangeShrink, ToInitialWhenAlreadyInitial) {
+    SmartRange range;
+    ASSERT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+    BOOLEAN Result = QuicRangeShrink(&range.range, QUIC_RANGE_INITIAL_SUB_COUNT);
+    EXPECT_TRUE(Result);
+    EXPECT_EQ(range.range.AllocLength, QUIC_RANGE_INITIAL_SUB_COUNT);
+}
