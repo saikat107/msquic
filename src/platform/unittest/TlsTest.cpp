@@ -1087,6 +1087,334 @@ TEST_F(TlsTest, HandshakeParamInfoChaCha20)
 }
 #endif // QUIC_DISABLE_CHACHA20_TESTS
 
+// DeepTest: Test backward compatibility with minimum buffer size (CipherSuite field)
+TEST_F(TlsTest, HandshakeParamInfoBackwardCompatMinSize)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    // Test with exact minimum size (up to CipherSuite field for backward compatibility)
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    uint32_t HandshakeInfoLen = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+    EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_AES_256_GCM_SHA384, HandshakeInfo.CipherSuite);
+    EXPECT_EQ(QUIC_TLS_PROTOCOL_1_3, HandshakeInfo.TlsProtocolVersion);
+    EXPECT_EQ(QUIC_CIPHER_ALGORITHM_AES_256, HandshakeInfo.CipherAlgorithm);
+    EXPECT_EQ(256, HandshakeInfo.CipherStrength);
+}
+
+// DeepTest: Test buffer too small error with size less than minimum
+TEST_F(TlsTest, HandshakeParamInfoBufferTooSmall)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    // Use a buffer size smaller than minimum required
+    uint32_t HandshakeInfoLen = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite) - 1;
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    EXPECT_EQ(QUIC_STATUS_BUFFER_TOO_SMALL, Status);
+    EXPECT_EQ(sizeof(QUIC_HANDSHAKE_INFO), HandshakeInfoLen);
+}
+
+// DeepTest: Test buffer too small with zero size
+TEST_F(TlsTest, HandshakeParamInfoBufferZeroSize)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    uint32_t HandshakeInfoLen = 0;
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    EXPECT_EQ(QUIC_STATUS_BUFFER_TOO_SMALL, Status);
+    EXPECT_EQ(sizeof(QUIC_HANDSHAKE_INFO), HandshakeInfoLen);
+}
+
+// DeepTest: Test NULL buffer with valid size returns error
+TEST_F(TlsTest, HandshakeParamInfoNullBuffer)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    uint32_t HandshakeInfoLen = sizeof(QUIC_HANDSHAKE_INFO);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            nullptr);
+    EXPECT_EQ(QUIC_STATUS_INVALID_PARAMETER, Status);
+}
+
+// DeepTest: Test buffer size between minimum and full size
+TEST_F(TlsTest, HandshakeParamInfoPartialBuffer)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    // Size between minimum (CipherSuite) and full struct (before TlsGroup field added in v2.5)
+    uint32_t HandshakeInfoLen = offsetof(QUIC_HANDSHAKE_INFO, TlsGroup);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    // Should succeed since buffer is >= minimum size
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+    EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_AES_256_GCM_SHA384, HandshakeInfo.CipherSuite);
+}
+
+// DeepTest: Test with larger than required buffer (oversized buffer)
+TEST_F(TlsTest, HandshakeParamInfoOversizedBuffer)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    // Allocate buffer larger than needed
+    uint8_t Buffer[sizeof(QUIC_HANDSHAKE_INFO) * 2];
+    CxPlatZeroMemory(Buffer, sizeof(Buffer));
+    uint32_t BufferLen = sizeof(Buffer);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &BufferLen,
+            Buffer);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+    QUIC_HANDSHAKE_INFO* HandshakeInfo = (QUIC_HANDSHAKE_INFO*)Buffer;
+    EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_AES_256_GCM_SHA384, HandshakeInfo->CipherSuite);
+}
+
+// DeepTest: Test multiple sequential calls to verify state consistency
+TEST_F(TlsTest, HandshakeParamInfoMultipleCalls)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    // Call multiple times with different buffer sizes
+    for (int i = 0; i < 3; i++) {
+        QUIC_HANDSHAKE_INFO HandshakeInfo;
+        CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+        uint32_t HandshakeInfoLen = sizeof(HandshakeInfo);
+        QUIC_STATUS Status =
+            CxPlatTlsParamGet(
+                ClientContext.Ptr,
+                QUIC_PARAM_TLS_HANDSHAKE_INFO,
+                &HandshakeInfoLen,
+                &HandshakeInfo);
+        ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+        EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_AES_256_GCM_SHA384, HandshakeInfo.CipherSuite);
+    }
+}
+
+// DeepTest: Test with minimum size on server context
+TEST_F(TlsTest, HandshakeParamInfoServerMinSize)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    uint32_t HandshakeInfoLen = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ServerContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+    EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_AES_256_GCM_SHA384, HandshakeInfo.CipherSuite);
+}
+
+// DeepTest: Test buffer size at boundary (CipherSuite offset - 1)
+TEST_F(TlsTest, HandshakeParamInfoBoundarySizeMinus1)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    uint32_t HandshakeInfoLen = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite) - 1;
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    EXPECT_EQ(QUIC_STATUS_BUFFER_TOO_SMALL, Status);
+    EXPECT_EQ(sizeof(QUIC_HANDSHAKE_INFO), HandshakeInfoLen);
+}
+
+// DeepTest: Test with AES128 cipher and minimum buffer size
+TEST_F(TlsTest, HandshakeParamInfoAES128MinSize)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig(
+        QUIC_CREDENTIAL_FLAG_SET_ALLOWED_CIPHER_SUITES,
+        QUIC_ALLOWED_CIPHER_SUITE_AES_128_GCM_SHA256);
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    uint32_t HandshakeInfoLen = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+    EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_AES_128_GCM_SHA256, HandshakeInfo.CipherSuite);
+    EXPECT_EQ(QUIC_CIPHER_ALGORITHM_AES_128, HandshakeInfo.CipherAlgorithm);
+}
+
+// DeepTest: Test alternating buffer sizes
+TEST_F(TlsTest, HandshakeParamInfoAlternatingBufferSizes)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    // Test with minimum size
+    QUIC_HANDSHAKE_INFO HandshakeInfo1;
+    CxPlatZeroMemory(&HandshakeInfo1, sizeof(HandshakeInfo1));
+    uint32_t Len1 = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite);
+    QUIC_STATUS Status1 = CxPlatTlsParamGet(
+        ClientContext.Ptr, QUIC_PARAM_TLS_HANDSHAKE_INFO, &Len1, &HandshakeInfo1);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status1));
+
+    // Test with full size
+    QUIC_HANDSHAKE_INFO HandshakeInfo2;
+    CxPlatZeroMemory(&HandshakeInfo2, sizeof(HandshakeInfo2));
+    uint32_t Len2 = sizeof(QUIC_HANDSHAKE_INFO);
+    QUIC_STATUS Status2 = CxPlatTlsParamGet(
+        ClientContext.Ptr, QUIC_PARAM_TLS_HANDSHAKE_INFO, &Len2, &HandshakeInfo2);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status2));
+
+    // Verify both returned same CipherSuite
+    EXPECT_EQ(HandshakeInfo1.CipherSuite, HandshakeInfo2.CipherSuite);
+}
+
+#ifndef QUIC_DISABLE_CHACHA20_TESTS
+// DeepTest: Test ChaCha20 cipher with minimum buffer size
+TEST_F(TlsTest, HandshakeParamInfoChaCha20MinSize)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig(
+        QUIC_CREDENTIAL_FLAG_SET_ALLOWED_CIPHER_SUITES,
+        QUIC_ALLOWED_CIPHER_SUITE_CHACHA20_POLY1305_SHA256);
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    ASSERT_NE(ServerConfig.SecConfig, nullptr);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    CxPlatZeroMemory(&HandshakeInfo, sizeof(HandshakeInfo));
+    uint32_t HandshakeInfoLen = CXPLAT_STRUCT_SIZE_THRU_FIELD(QUIC_HANDSHAKE_INFO, CipherSuite);
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    ASSERT_TRUE(QUIC_SUCCEEDED(Status));
+    EXPECT_EQ(QUIC_CIPHER_SUITE_TLS_CHACHA20_POLY1305_SHA256, HandshakeInfo.CipherSuite);
+    EXPECT_EQ(QUIC_CIPHER_ALGORITHM_CHACHA20, HandshakeInfo.CipherAlgorithm);
+}
+#endif
+
+// DeepTest: Test size validation preserves original buffer content on error
+TEST_F(TlsTest, HandshakeParamInfoBufferPreservationOnError)
+{
+    CxPlatClientSecConfig ClientConfig;
+    CxPlatServerSecConfig ServerConfig;
+    TlsContext ServerContext, ClientContext;
+    ClientContext.InitializeClient(ClientConfig);
+    ServerContext.InitializeServer(ServerConfig);
+    DoHandshake(ServerContext, ClientContext);
+
+    QUIC_HANDSHAKE_INFO HandshakeInfo;
+    // Fill with sentinel values
+    memset(&HandshakeInfo, 0xAB, sizeof(HandshakeInfo));
+    uint32_t OriginalLen = 1; // Too small
+    uint32_t HandshakeInfoLen = OriginalLen;
+    QUIC_STATUS Status =
+        CxPlatTlsParamGet(
+            ClientContext.Ptr,
+            QUIC_PARAM_TLS_HANDSHAKE_INFO,
+            &HandshakeInfoLen,
+            &HandshakeInfo);
+    EXPECT_EQ(QUIC_STATUS_BUFFER_TOO_SMALL, Status);
+    EXPECT_EQ(sizeof(QUIC_HANDSHAKE_INFO), HandshakeInfoLen);
+    // Buffer content should be preserved on error (first byte check)
+    EXPECT_EQ(0xAB, ((uint8_t*)&HandshakeInfo)[0]);
+}
+
 TEST_F(TlsTest, HandshakeParamNegotiatedAlpn)
 {
     CxPlatClientSecConfig ClientConfig;
