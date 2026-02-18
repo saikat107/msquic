@@ -1,0 +1,14 @@
+{
+  "project": "/Users/sarahfakhoury/Downloads/DeepTest-Agency/.github/skills/semantic-indexer/scripts",
+  "total_functions": 0,
+  "total_bugs": 0,
+  "fully_guarded": 0,
+  "barrier_proven_fp": 0,
+  "grand_fp": 0,
+  "remaining_count": 0,
+  "remaining": [],
+  "dse_reachable": {},
+  "dse_unreachable": [],
+  "prod_bugs": [],
+  "test_bugs": []
+}
